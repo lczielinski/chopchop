@@ -1,5 +1,5 @@
 import gc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import Counter, defaultdict
 from typing import Any
 import torch
@@ -8,10 +8,18 @@ from transformers.cache_utils import DynamicCache
 import time
 
 
+def _default_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 @dataclass
 class ModelConfig:
     model_id: str = "codellama/CodeLlama-13b-Instruct-hf"
-    device: str = "cuda"
+    device: str = field(default_factory=_default_device)
     dtype: torch.dtype = torch.bfloat16
 
 
@@ -71,14 +79,16 @@ class LanguageModelRunner:
             {"role": "system", "content": context},
             {"role": "user", "content": prompt},
         ]
-        input_ids = self.tokenizer.apply_chat_template(
+        encoded = self.tokenizer.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
             add_special_tokens=False,
             return_tensors="pt",
             padding=True,
+            return_dict=True,
         )
+        input_ids = encoded["input_ids"]
         if fixed_prefix:
             prefix_tokens = self.tokenizer(
                 fixed_prefix,

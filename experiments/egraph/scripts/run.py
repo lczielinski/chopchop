@@ -82,7 +82,7 @@ def run_benchmark(
     prompt = f"The original program is:\n{original}"
 
     start = time.time()
-    run_info = runner.run(config, prompt, context, checker)
+    run_info = runner.run(config, prompt, context, realizability_checker=checker)
     execution_time = time.time() - start
     success = (
         egraph_checker.realizable(run_info.output, True)
@@ -205,7 +205,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
 
     # --- Configuration ---
-    config = Config(num_guesses=300, max_new_tokens=100, repetition_penalty=1.2)
+    config = Config(repetition_penalty=1.2)
 
     # --- Run experiments ---
     for model_name in args.models:

@@ -1,17 +1,10 @@
 networkx
-pytest
-transformers
-greenery
 torch
+transformers
 accelerate
-matplotlib
 egglog
 pandas
-streamlit
-streamlit-ace
-st-annotated-text
-streamlit-keyup
+numpy
+tqdm
 lark
-tabulate
-func_timeout
 -e .

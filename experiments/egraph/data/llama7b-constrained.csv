@@ -1,0 +1,74 @@
+success,benchmark,temperature,execution_time,llm_finished,output,total_realizability_time,num_tokens_guessed,num_tokens_generated,tries_per_token,timed_out
+True,gravity.egglog,0.7,10.425282716751099,True," let k1 = pow 10 (-15) in
+let k2 = (66743 * m1 * m2) in
+let k3 = pow r 2 in
+k1 * k2 / k3",1.008962869644165,67,53,"Counter({(1, 51): 1, (14, 1): 1, (2, 1): 1})",False
+True,image.egglog,0.7,23.302585124969482,True," add_watermark (apply_filter (crop_image original_image selection) filter_type) watermark_image
+
+ 
+  
+   
+                         
+       
+           
+     
+                      
+    
+        
+          
+               
+              
+             
+                            
+                                            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+",1.1342475414276123,226,96,"Counter({(1, 84): 1, (4, 1): 1, (2, 7): 1, (108, 1): 1, (10, 1): 1, (3, 2): 1})",False
+True,auth.egglog,0.7,135.19472217559814,True, fetch_document (authorize_user_for_document (authenticate_user current_user web_request) document_id),4.4681174755096436,1375,33,"Counter({(1, 27): 1, (5, 1): 1, (1320, 1): 1, (7, 1): 1, (2, 2): 1, (12, 1): 1})",False
+True,positives.egglog,0.7,7.5004448890686035,True," let posXs = filter positive xs in
+let sumPosXs = sum posXs in
+let lenPosXs = length posXs in
+sumPosXs / lenPosXs",0.32181429862976074,66,45,"Counter({(1, 42): 1, (20, 1): 1, (2, 2): 1})",False
+True,variance.egglog,0.7,27.627150774002075,True," let d = a + b + c / 3 in 
+let e = a - d in 
+let f = b - d in 
+let g = c - d in 
+let h = sqrt (pow (e) 2 + pow (f) 2 + pow (g) 2) / 3 in
+
+let i = 1 / h in
+
+sqrt ((pow (a - ((a+b+c)/3)) 2) + (pow (b - ((a+b+c)/3)) 2) + (pow (c - ((a+b+c)/3)) 2)) / 3",9.03315281867981,168,143,"Counter({(1, 136): 1, (9, 1): 1, (2, 4): 1, (11, 1): 1, (4, 1): 1})",False
+True,quadratic.egglog,0.7,19.695248126983643,True," let q = pow(b * b - 4 * a * c) in
+let d = sqrt(q) in
+-b / (2 * a) + (1 / (2 * a)) * (sqrt(pow((b) 
+  
+ ) 2 - 4 * a *c))",3.7863545417785645,165,71,"Counter({(1, 53): 1, (8, 2): 1, (3, 3): 1, (2, 7): 1, (4, 3): 1, (42, 1): 1, (13, 1): 1, (6, 1): 1})",False
+True,lerp.egglog,0.7,2.9879539012908936,True, start + ((end - start) * scale),0.17930889129638672,25,12,"Counter({(1, 11): 1, (14, 1): 1})",False
+True,power.egglog,0.7,3.3858511447906494,True, power / 1000 * hours * price_per_kwh,0.32127833366394043,28,18,"Counter({(1, 16): 1, (10, 1): 1, (2, 1): 1})",False
+True,uppercase.egglog,0.7,2.3297810554504395,True, map (toUpper) (filter isAlpha s),0.12104392051696777,19,13,"Counter({(1, 11): 1, (6, 1): 1, (2, 1): 1})",False
+True,distance.egglog,0.7,5.31295108795166,True," let distance_squared = pow (x1 - x2) 2 + pow (y1 - y2) 2 in
+    sqrt (distance_squared)",0.30505800247192383,48,40,"Counter({(1, 39): 1, (9, 1): 1})",False

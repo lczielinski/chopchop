@@ -23,8 +23,8 @@ torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
 
-BENCHMARKS_DIR = "experiments/egraph/benchmarks"
-LET_EGGLOG_PATH = "experiments/egraph/let.egglog"
+BENCHMARKS_DIR = "egraph/benchmarks"
+LET_EGGLOG_PATH = "egraph/let.egglog"
 
 
 def load_file(filepath: str) -> str:
@@ -197,8 +197,8 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("experiments", "egraph", "data"),
-        help="Path to the output directory (default: experiments/egraph/data).",
+        default=Path("egraph", "data"),
+        help="Path to the output directory (default: egraph/data).",
     )
 
     args = parser.parse_args()

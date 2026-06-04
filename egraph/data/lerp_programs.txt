@@ -1,0 +1,18 @@
+# benchmark: lerp.egglog
+# original: start + (end - start) * scale
+# 3 distinct equivalent programs
+
+--- program 1 ---
+let start_temp = start in
+let end_temp = end in
+let diff = end_temp - start_temp in
+let result = scale * diff in
+result + start_temp
+
+--- program 2 ---
+let scaling_factor = end - start in
+scale * scaling_factor + start
+
+--- program 3 ---
+start + ((scale * end) + -start * scale)
+

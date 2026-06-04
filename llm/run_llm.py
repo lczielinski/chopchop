@@ -34,6 +34,12 @@ class Config:
     top_p: float = 1.0
     top_k: float = 0
     timeout: int = 99999  # no timeout by default
+    verbose: bool = False  # print a live per-token progress heartbeat
+    max_new_tokens: int = 0  # hard cap on accepted tokens (0 = unlimited)
+    max_stall: int = 0  # abort after this many accepted tokens add no
+    # non-whitespace content (0 = off); stops the model flooding whitespace
+    max_tries: int = 0  # abort after this many rejected guesses at a single
+    # position (0 = off); stops endless churn when the model won't emit EOS
 
 
 @dataclass
@@ -63,9 +69,9 @@ class LanguageModelRunner:
         model = AutoModelForCausalLM.from_pretrained(
             self.model_config.model_id,
             device_map="auto",
-            torch_dtype=self.model_config.dtype,
+            dtype=self.model_config.dtype,
         )
-        model.resize_token_embeddings(len(tokenizer))
+        model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
         return model, tokenizer
 
     def _tokenize_prompt(
@@ -113,12 +119,14 @@ class LanguageModelRunner:
         bad_words = [[id] for id in forbidden_tokens] if forbidden_tokens else None
         inp = torch.tensor([list(input_ids[0]) + generated_tokens])
         inp = inp.to(self.model_config.device)
+        attention_mask = torch.ones_like(inp)
         if self.tokenizer.eos_token_id in forbidden_tokens:
             eos_token_id = None
         else:
             eos_token_id = self.tokenizer.eos_token_id
         return self.model.generate(
             inp,
+            attention_mask=attention_mask,
             do_sample=True,
             pad_token_id=self.tokenizer.eos_token_id,
             eos_token_id=eos_token_id,
@@ -154,6 +162,8 @@ class LanguageModelRunner:
         tries = 0
         try_counts: Counter[int] = Counter()
         start_time = time.time()
+        content_len = len("".join(decoded_output.split()))
+        stall = 0
 
         while time.time() - start_time <= config.timeout:
             num_tokens_guessed += 1
@@ -180,11 +190,42 @@ class LanguageModelRunner:
                 )
                 total_realizability_time += time.time() - check_start
 
+            if config.verbose:
+                elapsed = time.time() - start_time
+                preview = decoded_output.replace("\n", " ")[-40:]
+                print(
+                    f"\r  gen: {len(generated_tokens):>3} tok | "
+                    f"retries@pos {tries - 1:>3} | guesses {num_tokens_guessed:>4} | "
+                    f"{elapsed:>4.0f}s | …{preview}",
+                    end="",
+                    flush=True,
+                )
+
             if is_realizable:
                 try_counts[tries] += 1
                 tries = 0
                 generated_tokens.append(new_token)
+
+                # Stall guard: count accepted tokens that add no real (non-whitespace)
+                # content, so a whitespace flood can't run forever.
+                new_content_len = len("".join(decoded_output.split()))
+                if new_content_len > content_len:
+                    content_len = new_content_len
+                    stall = 0
+                else:
+                    stall += 1
+                if config.max_stall and stall >= config.max_stall:
+                    if config.verbose:
+                        print(f"\n  [stalled: {stall} tokens with no content]", flush=True)
+                    break
+                if config.max_new_tokens and len(generated_tokens) >= config.max_new_tokens:
+                    if config.verbose:
+                        print(f"\n  [hit max_new_tokens={config.max_new_tokens}]", flush=True)
+                    break
+
                 if is_final:
+                    if config.verbose:
+                        print(flush=True)
                     return RunInfo(
                         llm_finished=True,
                         output=decoded_output,
@@ -197,8 +238,26 @@ class LanguageModelRunner:
             else:
                 forbidden_tokens[tuple(generated_tokens)].add(new_token)
                 cache.crop(-1)
+                if config.max_tries and tries >= config.max_tries:
+                    if config.verbose:
+                        print(
+                            f"\n  [stuck: {tries} rejected guesses at one position]",
+                            flush=True,
+                        )
+                    break
+        if config.verbose:
+            print(flush=True)
+        # We exited without the model emitting EOS (stall / token cap / timeout).
+        # Salvage the run if what we have is already a complete, valid program:
+        # the model often writes a finished program but won't emit the stop token.
+        salvaged = (
+            realizability_checker is not None
+            and realizability_checker.realizable(decoded_output, True)
+        )
+        if config.verbose and salvaged:
+            print("  [salvaged: output is already a complete valid program]", flush=True)
         return RunInfo(
-            llm_finished=False,
+            llm_finished=salvaged,
             output=decoded_output,
             total_realizability_time=total_realizability_time,
             num_tokens_guessed=num_tokens_guessed,

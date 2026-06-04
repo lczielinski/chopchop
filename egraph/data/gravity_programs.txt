@@ -1,0 +1,22 @@
+# benchmark: gravity.egglog
+# original: pow 10 (-15) * (66743 * m1 * m2) / (pow r 2)
+# 3 distinct equivalent programs
+
+--- program 1 ---
+let x = pow 10 (-15) in
+let y = 66743 * m1 * m2 in
+let z = pow r 2 in
+x * (y / z)
+
+--- program 2 ---
+let x = pow 10 (-15) in
+let y = 66743 * m1 * m2 in
+let z = pow r 2 in
+x * y / z
+
+--- program 3 ---
+let m = 66743 * m1 * m2 in
+let rSq = pow r 2 in
+let pow15 = pow 10 (-15) in
+pow15 * m / rSq
+

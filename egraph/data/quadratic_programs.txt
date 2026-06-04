@@ -1,0 +1,22 @@
+# benchmark: quadratic.egglog
+# original: (-b + sqrt ((pow b 2) - 4 * a * c)) / (2 * a)
+# 3 distinct equivalent programs
+
+--- program 1 ---
+let twice_a = a + a in
+(sqrt ((pow b 2) - 4 * a * c)) / (2 * a) + (1/2 * (1/a) * (1*(-b)))
+
+--- program 2 ---
+let b_squared = pow b 2
+in
+let four_ac = 4 * a * c
+in
+let root = sqrt (b_squared - four_ac)
+in
+(-b + root) / (2 * a)
+
+--- program 3 ---
+let sqrt_bc = sqrt (pow b 2 - 4 * a * c) in
+let result = -b + sqrt_bc in
+result / (2 * a)
+

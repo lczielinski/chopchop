@@ -1,9 +1,14 @@
 import json
+import logging
 from typing import Callable
 from functools import partial
 from collections import defaultdict
 from egglog.bindings import EGraph
 from core.grammar import Application, TreeGrammar, EmptySet, Union, ASTLeaf
+
+# egglog routes its lint warnings (e.g. "Global `x` should start with `$`")
+# through Python logging; quiet them since our benchmark globals are intentional.
+logging.getLogger("egglog").setLevel(logging.ERROR)
 from dataclasses import dataclass
 from core.rewrite import rewrite
 from functools import lru_cache

@@ -13,7 +13,7 @@ import time
 class ModelConfig:
     model_id: str = "codellama/CodeLlama-13b-Instruct-hf"
     device: str = "mps"  # Apple Silicon GPU
-    dtype: torch.dtype = torch.float16
+    dtype: torch.dtype = torch.bfloat16  # bf16-native models (Qwen, etc.); avoids fp16 overflow
 
 
 @dataclass
@@ -46,6 +46,24 @@ class LanguageModelRunner:
         self.model_config = model_config
         self.device = torch.device(model_config.device)
         self.model, self.tokenizer = self._load_model_and_tokenizer()
+        self.eos_ids = self._resolve_eos_ids()
+
+    def _resolve_eos_ids(self) -> set[int]:
+        """Token ids that end generation.
+
+        Chat models often stop on a turn-end token (e.g. Qwen's `<|im_end|>`) rather than
+        the classic EOS, and may list several in their generation config; collect them all
+        so generation is detected as finished regardless of which the model emits.
+        """
+        ids: set[int] = set()
+        gen_eos = getattr(self.model.generation_config, "eos_token_id", None)
+        if isinstance(gen_eos, int):
+            ids.add(gen_eos)
+        elif isinstance(gen_eos, (list, tuple)):
+            ids.update(gen_eos)
+        if self.tokenizer.eos_token_id is not None:
+            ids.add(self.tokenizer.eos_token_id)
+        return ids
 
     def _load_model_and_tokenizer(self):
         """
@@ -159,7 +177,7 @@ class LanguageModelRunner:
                 cache,
             )
             new_token: int = output.sequences[0][-1].tolist()
-            is_final = new_token == self.tokenizer.eos_token_id
+            is_final = new_token in self.eos_ids
             decoded_output = self.tokenizer.decode(
                 generated_tokens + [new_token], skip_special_tokens=True
             )

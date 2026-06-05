@@ -127,8 +127,9 @@ Run a single benchmark (from the repository root):
 uv run python -m egraph.run --benchmark quadratic.egglog
 ```
 Tokens stream to the terminal as they are decoded. The model runs on the Apple Silicon GPU
-(MPS) by default. Omit `--benchmark` to run all benchmarks. Useful options:
-- `--model {llama7b,llama13b,deepseek}` (default: `llama7b`)
+(MPS) in bfloat16 by default. Omit `--benchmark` to run all benchmarks. Useful options:
+- `--model NAME` (default: `qwen14b`) — one of `qwen14b`, `qwen7b`, `codestral`,
+  `deepseek-v2`, `llama13b`, `llama7b`, `deepseek`
 - `--temperature FLOAT` (default: `0.5`; use `>0` to get distinct programs)
 - `--top-p FLOAT` — nucleus sampling cutoff (default: `0.9`; `1.0` disables tail filtering)
 - `--num-programs N` / `-n N` — generate `N` distinct equivalent programs (default: `1`)
@@ -141,6 +142,18 @@ to 20 attempts:
 ```bash
 uv run python -m egraph.run --benchmark quadratic.egglog -n 3 --max-tries 20
 ```
+
+### Models and memory
+Models are loaded with `transformers` in bfloat16 onto MPS, so the whole model must fit in
+unified memory (bf16 footprints: `qwen7b` ~15 GB, `deepseek-v2` ~31 GB, `qwen14b` ~29 GB,
+`codestral` ~44 GB). On a 64 GB machine, `qwen14b` is the recommended default; `codestral`
+fits with less headroom. Notes:
+- `codestral` is gated on Hugging Face — accept its license on the model page, then
+  authenticate with `uv run hf auth login` (or set `HF_TOKEN` in your environment).
+- A 32B model (~64 GB in bf16) does **not** fit alongside activations on 64 GB; it would need
+  a quantized backend (e.g. MLX), which the current fp16/bf16 transformers+MPS path doesn't do.
+- If MPS hits an unimplemented op in bf16, run with `PYTORCH_ENABLE_MPS_FALLBACK=1` to fall
+  back to CPU for those ops.
 
 # Repository Organization
 - **`core`** — the backend of the tool (constructing and manipulating prefix spaces).

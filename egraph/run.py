@@ -25,6 +25,12 @@ BENCHMARKS_DIR = "egraph/benchmarks"
 LET_EGGLOG_PATH = "egraph/let.egglog"
 
 VALID_MODELS = {
+    # strong open-weight code models (sizes are bf16 weight footprints)
+    "qwen14b": "Qwen/Qwen2.5-Coder-14B-Instruct",  # ~29 GB
+    "qwen7b": "Qwen/Qwen2.5-Coder-7B-Instruct",  # ~15 GB
+    "codestral": "mistralai/Codestral-22B-v0.1",  # ~44 GB (gated on HF)
+    "deepseek-v2": "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",  # ~31 GB (MoE)
+    # smaller originals
     "llama13b": "codellama/CodeLlama-13b-Instruct-hf",
     "llama7b": "codellama/CodeLlama-7b-Instruct-hf",
     "deepseek": "deepseek-ai/deepseek-coder-6.7b-instruct",
@@ -190,8 +196,8 @@ def main() -> None:
     parser.add_argument(
         "--model",
         choices=VALID_MODELS.keys(),
-        default="llama7b",
-        help="Which model to use (default: llama7b).",
+        default="qwen14b",
+        help="Which model to use (default: qwen14b).",
     )
     parser.add_argument(
         "--temperature",

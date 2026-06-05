@@ -45,13 +45,11 @@ class LexerSpec:
                 start_idx = i
                 break
 
-        # Lex the new part of the input and cache intermediate results, keyed
-        # by the prefix each state corresponds to so future calls on longer
-        # inputs can reuse them.
-        for offset, char in enumerate(inp[start_idx:]):
+        # Lex the new part of the input and cache intermediate results.
+        for char in inp[start_idx:]:
             lstate = lstate.extend_lexer_state(char, self)
             lstate.remove_nonmaximal_munch()
-            self.lexical_cache.put(inp[: start_idx + offset + 1], lstate)
+            self.lexical_cache.put(inp, lstate)
         return lstate
 
 

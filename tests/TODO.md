@@ -1,5 +1,0 @@
-- tests
-- nonemptiness
-- compaction
-    - needs dependencies
-- fixpoint

@@ -1,7 +1,5 @@
 networkx
-torch
-transformers
-accelerate
+requests
 egglog
 pandas
 numpy

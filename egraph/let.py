@@ -1,3 +1,4 @@
+import re
 from core.rewrite import rewrite
 from core.grammar import TreeGrammar, EmptySet, Application, Union, ASTLeaf, as_tree
 from core.lark.from_lark import parse_attribute_grammar
@@ -5,6 +6,7 @@ from typing import Optional
 from .egraph import EGraph, in_egraph
 from functools import lru_cache
 from importlib.resources import files
+from .language import LanguageSpec
 from .let_abstract_syntax import Let, Var, Num, constructors
 
 
@@ -85,3 +87,33 @@ def let_equivalence(
             return t
         case _:
             return in_egraph(egraph)(t)
+
+
+def _let_constraint_factory(egraph: EGraph, source: str):
+    """Equivalence under the `let` language: respects let-binding semantics and
+    forbids reusing variable names already defined in the target program."""
+    used_names = frozenset(re.findall(r'Var\s*"([^"]+)"', source))
+    return lambda term: let_equivalence(egraph, term, used_names)
+
+
+def build_let_spec() -> LanguageSpec:
+    """The reference :class:`LanguageSpec`: a small functional language with
+    arithmetic and let-bindings."""
+    return LanguageSpec(
+        name="let",
+        grammar_source=let_source,
+        constructors=constructors,
+        start_symbol="let",
+        egglog_rules=files(__package__).joinpath("let.egglog").read_text(),
+        egglog_start="start",
+        egglog_start_type="Math",
+        context=files(f"{__package__}.benchmarks")
+        .joinpath("context.md")
+        .read_text(),
+        constraint_factory=_let_constraint_factory,
+        diversify_hint=(
+            "Explore a structurally different refactoring: introduce or remove "
+            "let-bindings, name different subexpressions, reorder commutative "
+            "operations (+ and *), or factor/inline shared terms. Output only code."
+        ),
+    )

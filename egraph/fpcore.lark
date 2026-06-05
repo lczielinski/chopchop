@@ -1,0 +1,31 @@
+SYMBOL: /[a-zA-Z_][a-zA-Z0-9_]*/
+INT: /\d+/
+WS: /\s+/
+%ignore WS
+
+fpcore: "(" "FPCore" "(" args ")" body ")" {FPCore}
+
+args: id
+    | id args        {Args}
+
+body: expr
+    | "(" "let" "(" bindings ")" body ")"  {Let}
+    | "(" "let*" "(" bindings ")" body ")" {Let}
+
+bindings: binding
+        | binding bindings {Bindings}
+
+binding: "[" id expr "]"   {Binding}
+
+expr: id
+    | num
+    | "(" "+" expr expr ")"   {Add}
+    | "(" "-" expr expr ")"   {Sub}
+    | "(" "*" expr expr ")"   {Mul}
+    | "(" "/" expr expr ")"   {Div}
+    | "(" "-" expr ")"        {Neg}
+    | "(" "sqrt" expr ")"     {Sqrt}
+    | "(" "pow" expr expr ")" {Pow}
+
+id: SYMBOL {Var}
+num: INT {Num}

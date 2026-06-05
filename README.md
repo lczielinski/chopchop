@@ -122,6 +122,25 @@ Each benchmark in `egraph/benchmarks/` pairs a reference program with egglog rew
 `egraph/let.egglog` holds the base algebraic rules. Decoding is constrained so that every
 generated program is provably equivalent to the reference under those rules.
 
+Generated programs are written in a small subset of [FPCore 2.0](https://fptalks.org/spec/fpcore-2.0.html):
+
+```
+(FPCore (a b c)
+  (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))
+```
+
+The subset (see `egraph/fpcore.lark`) is: an `(FPCore (args...) body)` header; the arithmetic
+operators `+ - * /` (binary) and `-` (unary negation); the operators `sqrt` and `pow`; integer
+literals and variables; and `let`/`let*` bindings `(let ([v e] ...) body)` whose values are
+arithmetic expressions. There is no generic function application — only these numeric operators —
+so the benchmarks are all numeric programs.
+
+`egraph/fpcore.py` translates this syntax to egglog (`expr_to_egglog`) and contains the
+equivalence pruner (`fpcore_equivalence`): it peels off the `FPCore` wrapper, folds each `let`
+binding into the egraph, and intersects the remaining body with the reference's egraph. The
+`Math` datatype's `Pow`/`Sqrt` constructors are tied to the reference's `App`-encoded `pow`/`sqrt`
+by bidirectional rules in `egraph/let.egglog`, so first-class `(pow ...)`/`(sqrt ...)` match.
+
 Run a single benchmark (from the repository root):
 ```bash
 uv run python -m egraph.run --benchmark quadratic.egglog
@@ -130,7 +149,7 @@ Tokens stream to the terminal as they are decoded. The model runs on the Apple S
 (MPS) in bfloat16 by default. Omit `--benchmark` to run all benchmarks. Useful options:
 - `--model NAME` (default: `qwen14b`) — one of `qwen14b`, `qwen7b`, `codestral`,
   `deepseek-v2`, `llama13b`, `llama7b`, `deepseek`
-- `--temperature FLOAT` (default: `0.5`; use `>0` to get distinct programs)
+- `--temperature FLOAT` (default: `0.5`)
 - `--top-p FLOAT` — nucleus sampling cutoff (default: `0.9`; `1.0` disables tail filtering)
 - `--num-programs N` / `-n N` — generate `N` distinct equivalent programs (default: `1`)
 - `--max-tries N` — cap generation attempts per benchmark (default: `10`)
@@ -142,6 +161,12 @@ to 20 attempts:
 ```bash
 uv run python -m egraph.run --benchmark quadratic.egglog -n 3 --max-tries 20
 ```
+
+To encourage distinct programs, the prompt lists the programs already produced for the
+benchmark and asks for one with different floating-point behavior (a real rewrite such as
+re-association, distribution, or factoring — not a commutative reordering, which rounds
+identically). Accepted programs are deduplicated by a canonical form (whitespace and
+`let`-bound variable names normalized), so trivial renamings are not counted as distinct.
 
 ### Models and memory
 Models are loaded with `transformers` in bfloat16 onto MPS, so the whole model must fit in
@@ -158,6 +183,7 @@ fits with less headroom. Notes:
 # Repository Organization
 - **`core`** — the backend of the tool (constructing and manipulating prefix spaces).
 - **`llm`** — running LLMs and interfacing an LLM with a realizability checker.
-- **`egraph`** — the equivalence case study: a `.lark` grammar, a `.py` abstract syntax, a
-  pruner (`let.py`) backed by egglog rewrite rules (`let.egglog`), benchmark programs in
+- **`egraph`** — the equivalence case study: the FPCore grammar (`fpcore.lark`), its abstract
+  syntax (`fpcore_abstract_syntax.py`), the egglog translation + equivalence pruner
+  (`fpcore.py`) backed by egglog rewrite rules (`let.egglog`), benchmark programs in
   `benchmarks/`, and `run.py` to run it.

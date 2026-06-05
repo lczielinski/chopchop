@@ -19,7 +19,11 @@ from llm.realizability import RealizabilityChecker
 from llm.run_llm import Config, LanguageModelRunner, ModelConfig
 
 from .egraph import egraph_from_egglog
-from .let import let_equivalence, let_grammar, let_lexer_spec
+from .fpcore import (
+    fpcore_equivalence,
+    fpcore_grammar,
+    fpcore_lexer_spec,
+)
 
 BENCHMARKS_DIR = "egraph/benchmarks"
 LET_EGGLOG_PATH = "egraph/let.egglog"
@@ -65,13 +69,14 @@ def canonical(program: str) -> str:
     """Canonical form for distinctness checks.
 
     Collapses whitespace and renames let-bound variables to positional placeholders, so
-    programs that differ only by binding names or formatting (e.g. `let d = E in sqrt d`
-    vs `let distance = E in sqrt distance`) compare equal. Genuinely different refactorings
-    keep different canonical forms. (Bindings are top-level and names unique in this
+    programs that differ only by binding names or formatting (e.g. `(let ([d E]) (sqrt d))`
+    vs `(let ([distance E]) (sqrt distance))`) compare equal. Genuinely different
+    refactorings keep different canonical forms. The free FPCore arguments are left alone,
+    so only the intermediate let-bound names are normalized. (Bound names are unique in this
     grammar, so a token-level rename is sufficient.)
     """
     text = re.sub(r"\s+", " ", program).strip()
-    bound = re.findall(r"\blet\s+([A-Za-z_]\w*)\s*=", text)
+    bound = re.findall(r"\[\s*([A-Za-z_]\w*)", text)
     renames = {name: f"$v{i}" for i, name in enumerate(bound)}
     return re.sub(r"\b[A-Za-z_]\w*\b", lambda m: renames.get(m.group(), m.group()), text)
 
@@ -81,10 +86,33 @@ def build_checker(source: str) -> RealizabilityChecker:
     egraph = egraph_from_egglog(source, "start", "Math")
     vars = re.findall(r'Var\s*"([^"]+)"', source)
     return RealizabilityChecker(
-        lambda term: let_equivalence(egraph, term, frozenset(vars)),
-        let_grammar,
-        let_lexer_spec,
+        lambda term: fpcore_equivalence(egraph, term, frozenset(vars)),
+        fpcore_grammar,
+        fpcore_lexer_spec,
     )
+
+
+def build_prompt(original: str, prior: list[str]) -> str:
+    """Prompt for one attempt.
+
+    The programs already produced are listed back to the model, with an
+    instruction to produce another that is algebraically equivalent but evaluates
+    with different floating-point rounding (a genuinely different rewrite, not a
+    reordering of commutative operands)."""
+    prompt = f"The original program is:\n{original}"
+    if prior:
+        listed = "\n".join(prior)
+        prompt += (
+            "\n\nYou have already produced these equivalent programs:\n"
+            f"{listed}\n\n"
+            "Produce another program that is algebraically equivalent to the original "
+            "but evaluates with different floating-point behavior — i.e. a genuinely "
+            "different rewrite (for example, re-associate a sum or product, distribute "
+            "or factor, rewrite a division as multiplication by a reciprocal, or "
+            "introduce a let for a shared subexpression). Do not merely reorder the "
+            "operands of a commutative operator, which does not change the result."
+        )
+    return prompt
 
 
 def run_benchmark(
@@ -104,7 +132,6 @@ def run_benchmark(
     """
     original, source = load_benchmark(name)
     checker = build_checker(source)
-    prompt = f"The original program is:\n{original}"
 
     print(f"\n=== {name} ===")
     print(f"reference: {original}")
@@ -115,6 +142,7 @@ def run_benchmark(
     while len(programs) < num_programs and attempts < max_tries:
         attempts += 1
         print(f"\n[attempt {attempts}/{max_tries}] ", end="", flush=True)
+        prompt = build_prompt(original, programs)
         run_info = runner.run(
             config, prompt, context, realizability_checker=checker, stream=stream
         )

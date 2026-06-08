@@ -1,19 +1,21 @@
 import gc
 import sys
-from dataclasses import dataclass
+import time
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from typing import Any
+
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.cache_utils import DynamicCache
-import time
 
 
 @dataclass
 class ModelConfig:
     model_id: str = "codellama/CodeLlama-13b-Instruct-hf"
     device: str = "mps"  # Apple Silicon GPU
-    dtype: torch.dtype = torch.bfloat16  # bf16-native models (Qwen, etc.); avoids fp16 overflow
+    # bf16-native models (Qwen, etc.); avoids fp16 overflow.
+    dtype: torch.dtype = torch.bfloat16
 
 
 @dataclass
@@ -26,8 +28,9 @@ class Config:
     repetition_penalty: float = 1.0
     top_p: float = 1.0
     top_k: float = 0
-    timeout: int = 99999  # no timeout by default
-    max_new_tokens: int = 100  # reject the attempt if it runs this long without finishing
+    timeout: float = 99999.0  # no timeout by default
+    # Reject the attempt if it runs this long without finishing.
+    max_new_tokens: int = 100
 
 
 @dataclass
@@ -37,14 +40,14 @@ class RunInfo:
     total_realizability_time: float
     num_tokens_guessed: int
     num_tokens_generated: int
-    tries_per_token: Counter
+    tries_per_token: Counter[int]
     timed_out: bool = False
 
 
 class LanguageModelRunner:
-    def __init__(self, model_config: ModelConfig = ModelConfig()):
-        self.model_config = model_config
-        self.device = torch.device(model_config.device)
+    def __init__(self, model_config: ModelConfig | None = None):
+        self.model_config = model_config or ModelConfig()
+        self.device = torch.device(self.model_config.device)
         self.model, self.tokenizer = self._load_model_and_tokenizer()
         self.eos_ids = self._resolve_eos_ids()
 
@@ -79,11 +82,9 @@ class LanguageModelRunner:
         model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
         return model, tokenizer
 
-    def _tokenize_prompt(
-        self, prompt: str, context: str, fixed_prefix: str = ""
-    ) -> list[int]:
+    def _tokenize_prompt(self, prompt: str, context: str) -> list[int]:
         """
-        Process and tokenize the input prompt with an optional fixed prefix.
+        Process and tokenize the input prompt.
         Returns a flat list of token IDs.
         """
         messages = [
@@ -97,11 +98,6 @@ class LanguageModelRunner:
             add_special_tokens=False,
             return_dict=False,
         )
-        if fixed_prefix:
-            input_ids = input_ids + self.tokenizer(
-                fixed_prefix, add_special_tokens=False
-            )["input_ids"]
-
         return input_ids
 
     def _generate_next_token(
@@ -115,7 +111,9 @@ class LanguageModelRunner:
         """
         Generate the next token using the model.
         """
-        bad_words = [[id] for id in forbidden_tokens] if forbidden_tokens else None
+        bad_words = (
+            [[token_id] for token_id in forbidden_tokens] if forbidden_tokens else None
+        )
         inp = torch.tensor([input_ids + generated_tokens])
         inp = inp.to(self.device)
         if self.tokenizer.eos_token_id in forbidden_tokens:
@@ -149,11 +147,11 @@ class LanguageModelRunner:
         realizability_checker=None,
         stream: bool = False,
     ) -> RunInfo:
-        input_ids = self._tokenize_prompt(prompt, context, fixed_prefix)
+        input_ids = self._tokenize_prompt(prompt, context)
         generated_tokens: list[int] = self.tokenizer(
             fixed_prefix, add_special_tokens=False
         )["input_ids"]
-        forbidden_tokens: dict = defaultdict(set)
+        forbidden_tokens: defaultdict[tuple[int, ...], set[int]] = defaultdict(set)
         cache = DynamicCache()
         decoded_output = fixed_prefix
         accepted_len = len(decoded_output)  # length of decoded text for accepted tokens
@@ -209,8 +207,8 @@ class LanguageModelRunner:
                         tries_per_token=try_counts,
                         timed_out=False,
                     )
-                # A stuck model can stay "realizable" forever via whitespace or endless
-                # let-bindings; reject the attempt once it runs too long without finishing.
+                # A stuck model can stay "realizable" via whitespace or recursive
+                # arithmetic towers; reject attempts that run too long without finishing.
                 if len(generated_tokens) >= config.max_new_tokens:
                     break
             else:
@@ -227,8 +225,10 @@ class LanguageModelRunner:
         )
 
     def __del__(self):
-        del self.model
-        del self.tokenizer
+        if hasattr(self, "model"):
+            del self.model
+        if hasattr(self, "tokenizer"):
+            del self.tokenizer
         gc.collect()
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()

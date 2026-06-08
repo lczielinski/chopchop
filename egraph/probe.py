@@ -21,37 +21,94 @@ def check(checker, program: str) -> tuple[bool, float]:
     return ok, time.time() - t0
 
 
-# Hand-written candidates per benchmark: (label, program, expected_equivalent)
+# Hand-written candidates per benchmark: (label, program, expected_accepted)
+# Some semantically equivalent programs are intentionally expected False because the
+# lightweight decoding rule set omits expensive e-graph-enriching rewrites.
 CANDIDATES = {
     "quadratic": [
         # the reference itself, written in FPCore
-        ("reference", "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))", True),
+        (
+            "reference",
+            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))",
+            True,
+        ),
         # pow b 2 -> b*b  (needs Pow<->Mul rule)
-        ("pow->mul", "(FPCore (a b c) (/ (+ (- b) (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))", True),
+        (
+            "pow->mul",
+            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))",
+            True,
+        ),
         # factor 4ac differently: 4*(a*c) vs (4*a)*c  (assoc, already supported)
-        ("reassoc-4ac", "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* 4 (* a c))))) (* 2 a)))", True),
+        (
+            "reassoc-4ac",
+            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* 4 (* a c))))) (* 2 a)))",
+            True,
+        ),
         # div as mult by reciprocal of (2a)  (already supported)
-        ("recip", "(FPCore (a b c) (* (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (/ 1 (* 2 a))))", True),
+        (
+            "recip",
+            "(FPCore (a b c) (* (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (/ 1 (* 2 a))))",
+            True,
+        ),
         # NOT equivalent: wrong sign on b
-        ("wrong-sign", "(FPCore (a b c) (/ (+ b (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))", False),
+        (
+            "wrong-sign",
+            "(FPCore (a b c) (/ (+ b (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))",
+            False,
+        ),
         # Citardauq (conjugate) form: 2c / (-b - sqrt(b^2-4ac)). Equal in exact reals,
         # numerically distinct. Needs multiply-by-conjugate, not a ring axiom.
-        ("citardauq", "(FPCore (a b c) (/ (* 2 c) (- (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))", True),
+        (
+            "citardauq",
+            "(FPCore (a b c) (/ (* 2 c) (- (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))",
+            True,
+        ),
         # adversarial: the OTHER root, 2c/(-b + sqrt D). NOT equal to the reference root.
-        ("citardauq-wrong", "(FPCore (a b c) (/ (* 2 c) (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))", False),
+        (
+            "citardauq-wrong",
+            "(FPCore (a b c) (/ (* 2 c) (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))",
+            False,
+        ),
     ],
     "distance": [
-        ("reference", "(FPCore (x1 x2 y1 y2) (sqrt (+ (pow (- x1 x2) 2) (pow (- y1 y2) 2))))", True),
-        ("pow->mul", "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))", True),
-        # expand (x1-x2)^2 = x1^2 - 2 x1 x2 + x2^2  (needs distribution of mul over sub)
-        ("expand-sq", "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (pow x1 2) (* (* 2 x1) x2)) (pow x2 2)) (pow (- y1 y2) 2))))", True),
+        (
+            "reference",
+            "(FPCore (x1 x2 y1 y2) (sqrt (+ (pow (- x1 x2) 2) (pow (- y1 y2) 2))))",
+            True,
+        ),
+        # Semantically equivalent, but the Pow->Mul rule is deliberately guarded to
+        # variable bases; expanding squared compound expressions blows up saturation.
+        (
+            "pow->mul",
+            "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))",
+            False,
+        ),
+        # Also semantically equivalent, but needs the omitted squared-difference expansion.
+        (
+            "expand-sq",
+            "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (pow x1 2) (* (* 2 x1) x2)) (pow x2 2)) (pow (- y1 y2) 2))))",
+            False,
+        ),
     ],
     "lerp": [
-        ("reference", "(FPCore (start end scale) (+ start (* (- end start) scale)))", True),
-        # distribute: start + end*scale - start*scale
-        ("distribute", "(FPCore (start end scale) (+ start (- (* end scale) (* start scale))))", True),
-        # factor form: start*(1-scale) + end*scale  -- needs 1, identity; expect maybe False
-        ("factor-1mscale", "(FPCore (start end scale) (+ (* start (- 1 scale)) (* end scale)))", True),
+        (
+            "reference",
+            "(FPCore (start end scale) (+ start (* (- end start) scale)))",
+            True,
+        ),
+        # Semantically equivalent, but this spelling needs reverse distribution/factoring,
+        # which is omitted from the decoding rule set for per-token performance.
+        (
+            "distribute",
+            "(FPCore (start end scale) (+ start (- (* end scale) (* start scale))))",
+            False,
+        ),
+        # Needs identity and factoring rules that are intentionally omitted.
+        (
+            "factor-1mscale",
+            "(FPCore (start end scale) (+ (* start (- 1 scale)) (* end scale)))",
+            False,
+        ),
     ],
 }
 
@@ -71,7 +128,9 @@ def main() -> None:
     for label, program, expected in CANDIDATES.get(name, []):
         ok, dt = check(checker, program)
         mark = "OK " if ok == expected else "XX "
-        print(f"  {mark} {label:16s} accepted={ok!s:5s} expected={expected!s:5s} ({dt:.2f}s)")
+        print(
+            f"  {mark} {label:16s} accepted={ok!s:5s} expected={expected!s:5s} ({dt:.2f}s)"
+        )
 
 
 if __name__ == "__main__":

@@ -26,7 +26,15 @@ and
   (+ (* x x) (* y y)))
 ```
 
-Your job is to refactor programs into *equivalent* ones that evaluate with *different floating-point behavior* — that is, the same value in exact real arithmetic, but a different result once rounding is taken into account. Aim for genuinely different rewrites: re-associate a sum or product, distribute or factor, or rewrite a division as multiplication by a reciprocal. Do NOT merely reorder the operands of a commutative operator (e.g. `a + b` to `b + a`), which produces the exact same floating-point result.
+Your job is to refactor programs into *equivalent* ones that evaluate with *different floating-point behavior* — that is, the same value in exact real arithmetic, but a different result once rounding is taken into account. Prefer these kinds of rewrites, which are the ones that change rounding:
+- re-associate a sum or product, e.g. `(* (* 4 a) c)` to `(* 4 (* a c))`;
+- rewrite a division as multiplication by a reciprocal, e.g. `(/ x (* 2 a))` to `(* x (/ 1 (* 2 a)))`;
+- split a fraction over a sum, e.g. `(/ (+ x y) c)` to `(+ (/ x c) (/ y c))`;
+- expand a squared variable, e.g. `(pow b 2)` to `(* b b)` (or contract `(* b b)` to `(pow b 2)`);
+- distribute a product over a sum, e.g. `(* a (+ x y))` to `(+ (* a x) (* a y))`;
+- rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate (the "Citardauq" trick).
+
+Keep the structure otherwise intact: in particular, keep a sum written as a sum in the same operand orientation (write `(+ (- b) s)`, not `(- s b)`), and do not factor a sum of products back into a product. Do NOT merely reorder the operands of a commutative operator (e.g. `a + b` to `b + a`), which produces the exact same floating-point result.
 
 A program is *equivalent* if it can be rewritten from the original using the following rules encoding basic properties of arithmetic:
 

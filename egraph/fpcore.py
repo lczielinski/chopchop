@@ -16,14 +16,16 @@ fpcore_lexer_spec, fpcore_grammar = parse_attribute_grammar(
     constructors, fpcore_source, "fpcore"
 ).build_parser()
 
-# Iterations of equality saturation to run. The conjugate-rationalization rules in
-# let.egglog (which enable the Citardauq form) make saturation NON-terminating: the
-# equivalence class keeps growing and `(run 100)` explodes (minutes, then OOM). Capping
-# at a few iterations bounds the e-graph while still reaching deep rewrites — the
-# Citardauq derivation is found in 6 iterations; the blow-up starts around 12. This
-# trades completeness (some valid-but-deep equivalences may be missed → rejected, never
-# wrongly accepted) for termination. See egraph/probe.py for the measurements.
-SATURATION_RUNS = 8
+# Iterations of equality saturation to run. The conjugate-rationalization + reciprocal +
+# cancellation rules in let.egglog make saturation NON-terminating: the e-graph keeps
+# growing super-linearly, and the per-token decoding check intersects the WHOLE e-graph
+# with the grammar, so its cost tracks e-graph size. Measured on quadratic (egraph/probe.py):
+#   run 6 -> 341 eclasses / 1470 enodes, wide-open check 0.19s, Citardauq reachable
+#   run 8 -> 3863 eclasses / 16142 enodes, wide-open check 16.5s
+# So 6 is the sweet spot: the minimum depth that reaches the Citardauq derivation, while
+# staying just below the blow-up. This trades completeness (some valid-but-deeper
+# equivalences are missed -> rejected, never wrongly accepted) for a fast, terminating check.
+SATURATION_RUNS = 6
 
 
 def expr_to_egglog(expr: TreeGrammar) -> str:

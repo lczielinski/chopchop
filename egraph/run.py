@@ -10,7 +10,7 @@ import random
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import TypedDict
 
 import torch
 
@@ -26,8 +26,16 @@ from .fpcore import (
     fpcore_lexer_spec,
 )
 
-BENCHMARKS_DIR = "egraph/benchmarks"
-LET_EGGLOG_PATH = "egraph/let.egglog"
+EGRAPH_DIR = Path(__file__).resolve().parent
+BENCHMARKS_DIR = EGRAPH_DIR / "benchmarks"
+LET_EGGLOG_PATH = EGRAPH_DIR / "let.egglog"
+
+
+class BenchmarkResult(TypedDict):
+    benchmark: str
+    reference: str
+    programs: list[str]
+
 
 VALID_MODELS = {
     # strong open-weight code models (sizes are bf16 weight footprints)
@@ -42,25 +50,25 @@ VALID_MODELS = {
 }
 
 
-def load_file(filepath: str) -> str:
-    with open(filepath, "r") as f:
-        return f.read()
+def load_file(filepath: Path) -> str:
+    return filepath.read_text(encoding="utf-8")
 
 
 def get_benchmark_names() -> list[str]:
-    return sorted(f.name for f in Path(BENCHMARKS_DIR).glob("*.egglog"))
+    return sorted(path.name for path in BENCHMARKS_DIR.glob("*.egglog"))
 
 
-def load_benchmark(name: str) -> Tuple[str, str]:
+def load_benchmark(name: str) -> tuple[str, str]:
     """Return the reference program and the full egglog source for a benchmark.
 
     The first line of a benchmark file is the human-readable reference program (a `;;`
     comment); the rest is appended to the base rules in let.egglog.
     """
-    content = load_file(f"{BENCHMARKS_DIR}/{name}")
+    content = load_file(BENCHMARKS_DIR / name)
     source = load_file(LET_EGGLOG_PATH)
 
-    assert content.startswith(";; ")
+    if not content.startswith(";; "):
+        raise ValueError(f"Benchmark {name!r} must start with a ';; ' reference line.")
     original = content.splitlines()[0][3:]
     source += content + f"\n(run {SATURATION_RUNS})"
     return original, source
@@ -126,11 +134,14 @@ def build_prompt(original: str, prior: list[str]) -> str:
             "\n\nYou have already produced these equivalent programs:\n"
             f"{listed}\n\n"
             "Produce another program that is algebraically equivalent to the original "
-            "but evaluates with different floating-point behavior — i.e. a genuinely "
-            "different rewrite (for example, re-associate a sum or product, distribute "
-            "or factor, rewrite a division as multiplication by a reciprocal, or "
-            "introduce a let for a shared subexpression). Do not merely reorder the "
-            "operands of a commutative operator, which does not change the result."
+            "but evaluates with different floating-point behavior. Use one of the "
+            "rounding-changing rewrites: re-associate a sum or product, rewrite a division "
+            "as multiplication by a reciprocal (`(/ x y)` -> `(* x (/ 1 y))`), split a "
+            "fraction over a sum (`(/ (+ x y) c)` -> `(+ (/ x c) (/ y c))`), expand a "
+            "squared variable (`(pow v 2)` -> `(* v v)`), distribute a product over a sum, "
+            "or rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate. Keep sums "
+            "written as sums in the same orientation and do not factor; do not merely "
+            "reorder the operands of a commutative operator."
         )
     return prompt
 
@@ -143,7 +154,7 @@ def run_benchmark(
     num_programs: int,
     max_tries: int,
     stream: bool,
-) -> dict:
+) -> BenchmarkResult:
     """Generate up to `num_programs` distinct equivalent programs for one benchmark.
 
     Samples full programs (up to `max_tries` attempts) and keeps the distinct ones the
@@ -170,7 +181,9 @@ def run_benchmark(
             print(run_info.output, end="", flush=True)
 
         if not run_info.llm_finished:
-            reason = "timed out" if run_info.timed_out else "too long, no equivalent program"
+            reason = (
+                "timed out" if run_info.timed_out else "too long, no equivalent program"
+            )
             print(f"  -> did not finish ({reason})")
         elif not checker.realizable(run_info.output, True):
             print("  -> not equivalent")
@@ -194,13 +207,16 @@ def resolve_benchmarks(name: str | None) -> list[str]:
     if not name.endswith(".egglog"):
         name += ".egglog"
     if name not in names:
-        raise SystemExit(
-            f"Unknown benchmark {name!r}. Available: {', '.join(names)}"
-        )
+        raise SystemExit(f"Unknown benchmark {name!r}. Available: {', '.join(names)}")
     return [name]
 
 
-def format_settings(args, model_config: ModelConfig, config: Config, now) -> str:
+def format_settings(
+    args: argparse.Namespace,
+    model_config: ModelConfig,
+    config: Config,
+    now: datetime,
+) -> str:
     """Header block recording the settings used for a run."""
     return "\n".join(
         [
@@ -219,7 +235,7 @@ def format_settings(args, model_config: ModelConfig, config: Config, now) -> str
     )
 
 
-def format_block(result: dict) -> str:
+def format_block(result: BenchmarkResult) -> str:
     """Render one benchmark's reference and accepted programs as text."""
     lines = [f"=== {result['benchmark']} ===", f"reference: {result['reference']}", ""]
     if not result["programs"]:
@@ -250,8 +266,9 @@ def main() -> None:
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.5,
-        help="Sampling temperature (default: 0.5). Use >0 to get distinct programs.",
+        default=0.8,
+        help="Sampling temperature (default: 0.8). Higher gives more varied attempts, which "
+        "helps the model land on a recognized rewrite.",
     )
     parser.add_argument(
         "--top-p",
@@ -269,8 +286,9 @@ def main() -> None:
     parser.add_argument(
         "--max-tries",
         type=int,
-        default=10,
-        help="Maximum generation attempts per benchmark (default: 10).",
+        default=25,
+        help="Maximum generation attempts per benchmark (default: 25). The accepted-rewrite "
+        "class is narrow, so more attempts materially raise the hit rate.",
     )
     parser.add_argument(
         "--stream",
@@ -297,7 +315,7 @@ def main() -> None:
         top_p=args.top_p,
         repetition_penalty=1.2,
     )
-    context = load_file(f"{BENCHMARKS_DIR}/context.md")
+    context = load_file(BENCHMARKS_DIR / "context.md")
 
     now = datetime.now()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -319,7 +337,7 @@ def main() -> None:
         )
         # rewrite the file after each benchmark so partial results survive an interruption
         blocks = "\n".join(format_block(r) for r in results)
-        output_path.write_text(f"{header}\n\n{blocks}")
+        output_path.write_text(f"{header}\n\n{blocks}", encoding="utf-8")
         rewriter.clear()
 
     print(f"\nWrote results to {output_path}")

@@ -1,13 +1,14 @@
 import json
 import logging
-from typing import Callable
-from functools import partial
 from collections import defaultdict
-from egglog.bindings import EGraph
-from core.grammar import Application, TreeGrammar, EmptySet, Union, ASTLeaf
 from dataclasses import dataclass
+from functools import lru_cache, partial
+from typing import Callable
+
+from egglog.bindings import EGraph
+
+from core.grammar import Application, TreeGrammar, EmptySet, Union, ASTLeaf
 from core.rewrite import rewrite
-from functools import lru_cache
 
 # egglog routes Rust logs through Python's logging (pyo3-log). It warns about `let` globals
 # that are not prefixed with `$`; our benchmarks intentionally use plain names, so quiet
@@ -20,7 +21,7 @@ START_RELATION = "__start__"  # dummy relation for the start symbol
 @dataclass(frozen=True)
 class ENode:
     op: str
-    children: tuple[str]  # list of names of children eclasses
+    children: tuple[str, ...]
 
 
 EClassMapping = dict[str, set[ENode]]  # maps eclass names to contained enodes
@@ -33,8 +34,8 @@ def root_and_eclass_mapping(egraph: EGraph) -> tuple[str, EClassMapping]:
     # Hack to work around egglog python not providing a way to iterate over eclasses.
     egraph_json = json.loads(egraph.serialize([]).to_json())
     nodes = egraph_json["nodes"]
-    root_eclass = None
-    eclasses = defaultdict(set)
+    root_eclass: str | None = None
+    eclasses: defaultdict[str, set[ENode]] = defaultdict(set)
 
     for node_data in nodes.values():
         eclass, op = node_data["eclass"], node_data["op"]
@@ -44,14 +45,15 @@ def root_and_eclass_mapping(egraph: EGraph) -> tuple[str, EClassMapping]:
             # should take formating function describing conversion
             # from egglog asts to our asts
         children_eclasses = tuple(
-            nodes[enode]["eclass"] for enode in node_data["children"]
+            nodes[child]["eclass"] for child in node_data["children"]
         )
         if op == START_RELATION:
             root_eclass = children_eclasses[0]
         else:
             eclasses[eclass].add(ENode(op, children_eclasses))
-    assert root_eclass is not None, "No start relation found in the egraph."
-    return root_eclass, eclasses
+    if root_eclass is None:
+        raise ValueError("No start relation found in the egraph.")
+    return root_eclass, dict(eclasses)
 
 
 @lru_cache(maxsize=None)
@@ -72,7 +74,7 @@ def in_egraph(egraph: EGraph) -> Callable[[TreeGrammar], TreeGrammar]:
             case ASTLeaf(prefix=prefix, is_complete=True):
                 matches_constant = any(
                     enode.op == prefix and not enode.children
-                    for enode in eclasses[eclass]
+                    for enode in eclasses.get(eclass, ())
                 )
                 return t if matches_constant else EmptySet()
             case ASTLeaf(prefix=prefix, token_regex=token_regex, is_complete=False):
@@ -80,24 +82,24 @@ def in_egraph(egraph: EGraph) -> Callable[[TreeGrammar], TreeGrammar]:
                     not enode.children
                     and enode.op.startswith(prefix)
                     and token_regex.fullmatch(enode.op, partial=True)
-                    for enode in eclasses[eclass]
+                    for enode in eclasses.get(eclass, ())
                 )
                 return t if matches_constant else EmptySet()
             case Application(children):
                 matches = []
-                for enode in eclasses[eclass]:
-                    if t.constructor == enode.op:
-                        assert len(enode.children) == len(children)
-                        matches.append(
-                            t.of(
-                                [
-                                    in_eclass(child_eclass, child)
-                                    for child_eclass, child in zip(
-                                        enode.children, children
-                                    )
-                                ],
-                            )
+                for enode in eclasses.get(eclass, ()):
+                    if t.constructor != enode.op or len(enode.children) != len(
+                        children
+                    ):
+                        continue
+                    matches.append(
+                        t.of(
+                            [
+                                in_eclass(child_eclass, child)
+                                for child_eclass, child in zip(enode.children, children)
+                            ],
                         )
+                    )
                 return Union.of(matches)
             case _:
                 raise ValueError
@@ -106,7 +108,8 @@ def in_egraph(egraph: EGraph) -> Callable[[TreeGrammar], TreeGrammar]:
 
 
 def egraph_from_egglog(egglog_source: str, start: str, start_type: str) -> EGraph:
-    assert "(run" in egglog_source
+    if "(run" not in egglog_source:
+        raise ValueError("egglog source must contain a `(run ...)` command.")
     egglog_source += f"\n(relation {START_RELATION} ({start_type}))"
     egglog_source += f"\n({START_RELATION} {start})"
     egraph = EGraph(record=True)

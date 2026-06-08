@@ -1,34 +1,46 @@
 (datatype Math
-(Num i64)
-(Var String)
-(Add Math Math)
-(Sub Math Math)
-(Neg Math)
-(Pow Math Math)
-(Sqrt Math)
-(Mul Math Math)
-(Div Math Math))
-
+  (Num i64)
+  (Var String)
+  (Add Math Math)
+  (Sub Math Math)
+  (Neg Math)
+  (Pow Math Math)
+  (Sqrt Math)
+  (Mul Math Math)
+  (Div Math Math))
 
 (rewrite (Add a b)
-        (Add b a))
+  (Add b a))
+
 (rewrite (Add (Num a) (Num b))
-(Num (+ a b)))
-(rewrite (Add (Add a b) c) (Add a (Add b c)))
+  (Num (+ a b)))
 
-(rewrite (Neg a) (Sub (Num 0) a))
-(rewrite (Sub (Num 0) a) (Neg a))
-(rewrite (Sub a b) (Add a (Neg b)))
+(rewrite (Add (Add a b) c)
+  (Add a (Add b c)))
+
+(rewrite (Neg a)
+  (Sub (Num 0) a))
+
+(rewrite (Sub (Num 0) a)
+  (Neg a))
+
+(rewrite (Sub a b)
+  (Add a (Neg b)))
+
 (rewrite (Sub (Num a) (Num b))
-        (Num (- a b)))
+  (Num (- a b)))
 
-(rewrite (Mul a b) (Mul b a))
+(rewrite (Mul a b)
+  (Mul b a))
+
 (rewrite (Mul (Num a) (Num b))
-        (Num (* a b)))
-(rewrite (Mul (Mul a b) c) (Mul a (Mul b c)))
+  (Num (* a b)))
+
+(rewrite (Mul (Mul a b) c)
+  (Mul a (Mul b c)))
 
 (rewrite (Mul a (Add b c))
-        (Add (Mul a b) (Mul a c)))
+  (Add (Mul a b) (Mul a c)))
 
 ;; NOTE: Herbie's "safe" contracting/normalization rules (remove-double-neg, the identity
 ;; eliminations a+0=a / a*1=a / a-a=0 / a/a=1, etc.) were tried here and REVERTED. Although
@@ -45,8 +57,8 @@
 ;; completion space is the entire grammar). Adding the factoring/fraction rules pushed that
 ;; first-token check from ~1.2s to ~17s — generation appears to hang. Herbie pays the
 ;; e-graph cost once and extracts; this constrained decoder pays it per token, so it cannot
-;; afford a Herbie-sized rule set without a cheaper per-token check. See egraph/probe_prefix.py.
-
+;; afford a Herbie-sized rule set without a cheaper per-token check. See
+;; egraph/probe_prefix.py.
 
 ;; squaring: rewrite a squared VARIABLE to a product, so the model may write `(* b b)`
 ;; for `(pow b 2)`. Guarded to a leaf `(Var _)` base for two reasons:
@@ -60,22 +72,46 @@
 
 ;; for some reason this makes egglog upset?
 ;; (rewrite (Div (Num a) (Num b)) (Num (/ a b)))
-(rewrite (Div a b) (Mul a (Div (Num 1) b)))
-(rewrite (Mul a (Div (Num 1) b)) (Div a b))
-(rewrite (Div (Num 1) (Mul b c)) (Mul (Div (Num 1) b) (Div (Num 1) c)))
-(rewrite (Mul (Div (Num 1) b) (Div (Num 1) c)) (Div (Num 1) (Mul b c)))
+(rewrite (Div a b)
+  (Mul a (Div (Num 1) b)))
 
-(rewrite (Pow (Sub a b) (Num 2)) (Pow (Sub b a) (Num 2)))
+(rewrite (Mul a (Div (Num 1) b))
+  (Div a b))
+
+(rewrite (Div (Num 1) (Mul b c))
+  (Mul (Div (Num 1) b) (Div (Num 1) c)))
+
+(rewrite (Mul (Div (Num 1) b) (Div (Num 1) c))
+  (Div (Num 1) (Mul b c)))
+
+(rewrite (Pow (Sub a b) (Num 2))
+  (Pow (Sub b a) (Num 2)))
 
 ;; --- conjugate rationalization (enables the Citardauq / numerically-stable form) ---
 ;; p + sqrt(d) = (p^2 - d) / (p - sqrt(d)), since (p+sqrt d)(p-sqrt d) = p^2 - d.
 ;; Sound when d >= 0 and p != sqrt(d) (the standard domain assumption for refactoring).
 ;; Guarded to (Add _ (Sqrt _)): it only fires where a sqrt is being added, so it does
 ;; not touch the squared-sum benchmarks (distance/variance have no Add-with-Sqrt operand).
-(rewrite (Add p (Sqrt d)) (Div (Sub (Pow p (Num 2)) d) (Sub p (Sqrt d))))
+(rewrite (Add p (Sqrt d))
+  (Div (Sub (Pow p (Num 2)) d) (Sub p (Sqrt d))))
+
 ;; supporting identities so the rationalized form simplifies down to 2c/(-b-sqrt d):
-(rewrite (Pow (Neg a) (Num 2)) (Pow a (Num 2)))      ; (-a)^2 = a^2
-(rewrite (Sub a (Sub a b)) b)                          ; a - (a - b) = b  (b^2 - (b^2-4ac) = 4ac)
-(rewrite (Div (Mul a x) (Mul a y)) (Div x y))          ; cancel a common factor in a ratio
-(rewrite (Div (Mul a x) a) x)                          ; divide out a factor
-(rewrite (Mul (Num 4) x) (Mul (Num 2) (Mul (Num 2) x)))  ; split 4 so 4ac/2a reduces to 2c
+;; (-a)^2 = a^2
+(rewrite (Pow (Neg a) (Num 2))
+  (Pow a (Num 2)))
+
+;; a - (a - b) = b  (b^2 - (b^2-4ac) = 4ac)
+(rewrite (Sub a (Sub a b))
+  b)
+
+;; cancel a common factor in a ratio
+(rewrite (Div (Mul a x) (Mul a y))
+  (Div x y))
+
+;; divide out a factor
+(rewrite (Div (Mul a x) a)
+  x)
+
+;; split 4 so 4ac/2a reduces to 2c
+(rewrite (Mul (Num 4) x)
+  (Mul (Num 2) (Mul (Num 2) x)))

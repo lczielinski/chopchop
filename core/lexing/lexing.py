@@ -1,10 +1,11 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-import regex
 from typing import Iterable
-from .token import Token
-from .lru_cache import LRUCache
 
+import regex
+
+from .lru_cache import LRUCache
+from .token import Token
 
 IGNORE = "RESERVED_IGNORE_SORT_TITLE"
 
@@ -14,24 +15,26 @@ class LexerSpec:
     tokens: frozenset[Token]
     ignore_regex: regex.Pattern = regex.compile(r"^(?!)$")
     lexical_cache: LRUCache[str, LexerState] = field(
-        default_factory=lambda: LRUCache(128)
+        default_factory=lambda: LRUCache(128),
+        compare=False,
+        repr=False,
     )
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.tokens, self.ignore_regex.pattern))
 
     def get_lexemes(self) -> Iterable[Token]:
         yield from self.tokens
         yield Token(IGNORE, self.ignore_regex)
 
-    def lex(self, inp: str, final=True):
+    def lex(self, inp: str, final: bool = True) -> set[tuple[Token, ...]]:
         lstate = self.compute_lexer_state(inp)
         if final:
             lstate = lstate.finalize()
         lstate = lstate.remove_ignorable_tokens()
         return lstate.get_partial_lexes()
 
-    def partial_lex(self, inp: str):
+    def partial_lex(self, inp: str) -> set[tuple[Token, ...]]:
         return self.lex(inp, final=False)
 
     def compute_lexer_state(self, inp: str) -> LexerState:
@@ -45,11 +48,11 @@ class LexerSpec:
                 start_idx = i
                 break
 
-        # Lex the new part of the input and cache intermediate results.
-        for char in inp[start_idx:]:
+        # Lex the new part of the input and cache every prefix we compute.
+        for idx, char in enumerate(inp[start_idx:], start_idx):
             lstate = lstate.extend_lexer_state(char, self)
             lstate.remove_nonmaximal_munch()
-            self.lexical_cache.put(inp, lstate)
+            self.lexical_cache.put(inp[: idx + 1], lstate)
         return lstate
 
 
@@ -62,15 +65,15 @@ class LexerState:
         return {tuple(self.prefix) + cont for cont in self.continuations}
 
     def simplify(self) -> LexerState:
-        """If no token regex can munch further,
-        then fix the next token in the prefix and reset the continuations."""
-        if self.continuations and all(
-            cont[len(self.prefix)].nullable() for cont in self.continuations
+        """Move complete leading continuation tokens into the fixed prefix."""
+        prefix = self.prefix
+        continuations = self.continuations
+        while continuations and all(
+            cont and cont[0].nullable() for cont in continuations
         ):
-            prefix = self.prefix + (next(iter(self.continuations))[0].complete(),)
-            continuations = {t[1:] for t in self.continuations}
-            return LexerState(prefix, continuations).simplify()
-        return self
+            prefix = prefix + (next(iter(continuations))[0].complete(),)
+            continuations = {cont[1:] for cont in continuations}
+        return LexerState(prefix, continuations)
 
     def finalize(self) -> LexerState:
         """Complete every completable partial lex and discard the others."""
@@ -78,7 +81,7 @@ class LexerState:
             continuations = {
                 c[:-1] + (c[-1].complete(),)
                 for c in self.continuations
-                if c[-1].nullable()
+                if c and c[-1].nullable()
             }
             return LexerState(self.prefix, continuations)
         return self
@@ -104,22 +107,17 @@ class LexerState:
                     new_continuations.add(state[:-1] + (state[-1].extend(char),))
         return LexerState(self.prefix, new_continuations)
 
-    def remove_nonmaximal_munch(self):
+    def remove_nonmaximal_munch(self) -> None:
         """Remove continuations that violate maximal munch."""
-        result = set(self.continuations)
-        for state in self.continuations:
-            for state2 in result:
-                for i in range(min(len(state), len(state2))):
-                    if state[i] != state2[i]:
-                        if (
-                            len(state[i].prefix) < len(state2[i].prefix)
-                            and state2[i].nullable()
-                        ):
-                            result.remove(state)
-                        break
-                if state not in result:
-                    break
-        self.continuations = result
+        self.continuations = {
+            state
+            for state in self.continuations
+            if not any(
+                _violates_maximal_munch(state, other)
+                for other in self.continuations
+                if other != state
+            )
+        }
 
     def remove_ignorable_tokens(self) -> LexerState:
         """Remove ignorable tokens (e.g., whitespace)."""
@@ -128,3 +126,16 @@ class LexerState:
             for state in self.continuations
         }
         return LexerState(self.prefix, continuations)
+
+
+def _violates_maximal_munch(
+    candidate: tuple[Token, ...],
+    other: tuple[Token, ...],
+) -> bool:
+    for idx in range(min(len(candidate), len(other))):
+        if candidate[idx] != other[idx]:
+            return (
+                len(candidate[idx].prefix) < len(other[idx].prefix)
+                and other[idx].nullable()
+            )
+    return False

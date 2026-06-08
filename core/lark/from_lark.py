@@ -1,59 +1,72 @@
 import importlib.resources
+from dataclasses import dataclass
+from typing import Callable, Iterable
+
 import lark
 import regex
-from typing import Callable, Iterable
-from regex import Pattern as Regex
-from dataclasses import dataclass
 from lark import Lark
+from regex import Pattern as Regex
+
 from core.rewrite import rewrite
+
 from ..grammar import Application
-from ..parser import Rearrangement, Parser, ConstantParser, Concatenation, Choice
-from ..lexing.token import Token
 from ..lexing.lexing import LexerSpec
+from ..lexing.token import Token
+from ..parser import Choice, Concatenation, ConstantParser, Parser, Rearrangement
+
+ParserFactory = Callable[[], Parser]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Production:
     action: Rearrangement
     symbols: list[str]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Rule:
     nt: str
     productions: list[Production]
 
 
-@dataclass
+@dataclass(frozen=True)
 class AttributeGrammar:
     rules: list[Rule]  # One rule for each distinct nonterminal.
     start: str  # Starting nonterminal.
     token_defs: dict[str, Regex]  # Map from token type to Regex.
     ignores: list[str]  # List of token types to ignore.
 
-    def parser_from_sym(self, sym: str, parsers) -> Parser:
+    def parser_from_sym(self, sym: str, parsers: dict[str, ParserFactory]) -> Parser:
         if sym in self.token_defs:
             return ConstantParser(Token(sym, self.token_defs[sym]))
         return parsers[sym]()
 
-    def parser_from_production(self, production: Production, parsers) -> Parser:
+    def parser_from_production(
+        self,
+        production: Production,
+        parsers: dict[str, ParserFactory],
+    ) -> Parser:
         production_parsers = [
-            self.parser_from_sym(sym, parsers)
-            for sym in production.symbols
+            self.parser_from_sym(sym, parsers) for sym in production.symbols
         ]
-        if (production.action.f is None and len(production_parsers) == 1):
+        if production.action.f is None and len(production_parsers) == 1:
             return production_parsers[0]
         return Concatenation.of(
             production_parsers,
             rearrange=production.action,
         )
 
-    def parser_from_rule(self, rule: Rule, parsers):
+    def parser_from_rule(
+        self,
+        rule: Rule,
+        parsers: dict[str, ParserFactory],
+    ) -> ParserFactory:
         def parser_thunk():
             return Choice.of(
                 self.parser_from_production(production, parsers)
                 for production in rule.productions
             )
+
         parser_thunk.__name__ = rule.nt
         return rewrite(parser_thunk)
 
@@ -71,9 +84,9 @@ class AttributeGrammar:
             ignore_regex = regex.compile(r"^(?!)$")
         lexer_spec = LexerSpec(tokens, ignore_regex=ignore_regex)
 
-        parsers: dict[str, Callable[[], Parser]] = {}
+        parsers: dict[str, ParserFactory] = {}
         for rule in self.rules:
-            parsers[rule.nt] = self.parser_from_rule(rule, parsers)  # type: ignore
+            parsers[rule.nt] = self.parser_from_rule(rule, parsers)
 
         return lexer_spec, parsers[self.start]()
 

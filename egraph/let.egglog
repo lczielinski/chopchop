@@ -32,6 +32,24 @@
 (rewrite (Mul a (Add b c))
         (Add (Mul a b) (Mul a c)))
 
+;; NOTE ON ENRICHING THIS RULE SET: the sound Herbie rules (factoring, full associativity,
+;; fraction splitting) are correct for the reals AND, with iteration-bounded saturation,
+;; do not loop. But they still enlarge the e-graph, and decoding intersects the WHOLE
+;; e-graph with the grammar on EVERY token (worst on the empty `(FPCore ` prefix, whose
+;; completion space is the entire grammar). Adding the factoring/fraction rules pushed that
+;; first-token check from ~1.2s to ~17s — generation appears to hang. Herbie pays the
+;; e-graph cost once and extracts; this constrained decoder pays it per token, so it cannot
+;; afford a Herbie-sized rule set without a cheaper per-token check. See egraph/probe_prefix.py.
+
+
+;; squaring: a*a <-> (pow a 2). The EXPANDING direction is guarded to a leaf
+;; variable base: expanding a squared SUM (e.g. (pow (- x y) 2)) would feed the
+;; distribution rule above and blow up saturation, so only (Var _)^2 expands.
+;; (NOTE: closing the distribute<->factor loop with the reverse of the rule above,
+;; or expanding pow on sums, both make `(run 100)` explode — see egraph/probe.py.)
+(rewrite (Pow (Var v) (Num 2)) (Mul (Var v) (Var v)))
+(rewrite (Mul a a) (Pow a (Num 2)))
+
 ;; for some reason this makes egglog upset?
 ;; (rewrite (Div (Num a) (Num b)) (Num (/ a b)))
 (rewrite (Div a b) (Mul a (Div (Num 1) b)))
@@ -47,3 +65,16 @@
 (rewrite (Sqrt a) (App sqrt a))
 (rewrite (App sqrt a) (Sqrt a))
 (rewrite (Pow (Sub a b) (Num 2)) (Pow (Sub b a) (Num 2)))
+
+;; --- conjugate rationalization (enables the Citardauq / numerically-stable form) ---
+;; p + sqrt(d) = (p^2 - d) / (p - sqrt(d)), since (p+sqrt d)(p-sqrt d) = p^2 - d.
+;; Sound when d >= 0 and p != sqrt(d) (the standard domain assumption for refactoring).
+;; Guarded to (Add _ (Sqrt _)): it only fires where a sqrt is being added, so it does
+;; not touch the squared-sum benchmarks (distance/variance have no Add-with-Sqrt operand).
+(rewrite (Add p (Sqrt d)) (Div (Sub (Pow p (Num 2)) d) (Sub p (Sqrt d))))
+;; supporting identities so the rationalized form simplifies down to 2c/(-b-sqrt d):
+(rewrite (Pow (Neg a) (Num 2)) (Pow a (Num 2)))      ; (-a)^2 = a^2
+(rewrite (Sub a (Sub a b)) b)                          ; a - (a - b) = b  (b^2 - (b^2-4ac) = 4ac)
+(rewrite (Div (Mul a x) (Mul a y)) (Div x y))          ; cancel a common factor in a ratio
+(rewrite (Div (Mul a x) a) x)                          ; divide out a factor
+(rewrite (Mul (Num 4) x) (Mul (Num 2) (Mul (Num 2) x)))  ; split 4 so 4ac/2a reduces to 2c

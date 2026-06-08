@@ -20,6 +20,7 @@ from llm.run_llm import Config, LanguageModelRunner, ModelConfig
 
 from .egraph import egraph_from_egglog
 from .fpcore import (
+    SATURATION_RUNS,
     fpcore_equivalence,
     fpcore_grammar,
     fpcore_lexer_spec,
@@ -61,7 +62,7 @@ def load_benchmark(name: str) -> Tuple[str, str]:
 
     assert content.startswith(";; ")
     original = content.splitlines()[0][3:]
-    source += content + "\n(run 100)"
+    source += content + f"\n(run {SATURATION_RUNS})"
     return original, source
 
 

@@ -39,10 +39,14 @@ a + b => b + a
 a - b => a + (-b)
 a * b => b * a
 (a * b) * c => a * (b * c)
+a * (b + c) => a*b + a*c
 a / b => a * (1 / b)
 a * (1 / b) => a / b
 1 / (b * c) => (1 / b) * (1 / c)
 (1 / b) * (1 / c) => 1 / (b * c)
 pow (a - b) 2 => pow (b - a) 2
+pow x 2 => x * x        (x a variable)
+x * x => pow x 2
+a + sqrt(d) => (a*a - d) / (a - sqrt(d))     (rationalize by the conjugate; e.g. gives the Citardauq form of the quadratic formula)
 
 Never introduce features not in the language. Never include comments or explanations. ONLY output code, then IMMEDIATELY stop. Never redefine variables in the original program or that have already been defined.

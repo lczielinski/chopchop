@@ -21,6 +21,15 @@ fpcore_lexer_spec, fpcore_grammar = parse_attribute_grammar(
     constructors, fpcore_source, "fpcore"
 ).build_parser()
 
+# Iterations of equality saturation to run. The conjugate-rationalization rules in
+# let.egglog (which enable the Citardauq form) make saturation NON-terminating: the
+# equivalence class keeps growing and `(run 100)` explodes (minutes, then OOM). Capping
+# at a few iterations bounds the e-graph while still reaching deep rewrites — the
+# Citardauq derivation is found in 6 iterations; the blow-up starts around 12. This
+# trades completeness (some valid-but-deep equivalences may be missed → rejected, never
+# wrongly accepted) for termination. See egraph/probe.py for the measurements.
+SATURATION_RUNS = 8
+
 
 def expr_to_egglog(expr: TreeGrammar) -> str:
     """Translate a concrete arithmetic expression into an egglog s-expression.
@@ -45,7 +54,7 @@ def expr_to_egglog(expr: TreeGrammar) -> str:
 
 @lru_cache(maxsize=None)
 def update_egraph(
-    egraph: EGraph, var: TreeGrammar, value: TreeGrammar, saturation_depth=100
+    egraph: EGraph, var: TreeGrammar, value: TreeGrammar, saturation_depth=SATURATION_RUNS
 ) -> EGraph:
     """Return a new egraph that additionally knows ``value`` is equal to ``var``.
 

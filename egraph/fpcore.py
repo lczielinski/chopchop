@@ -1,15 +1,10 @@
 from core.rewrite import rewrite
-from core.grammar import TreeGrammar, EmptySet, Application, Union, ASTLeaf, as_tree
+from core.grammar import TreeGrammar, EmptySet, Application, Union, ASTLeaf
 from core.lark.from_lark import parse_attribute_grammar
-from typing import Optional
-from functools import lru_cache
 from importlib.resources import files
 from .egraph import EGraph, in_egraph
 from .fpcore_abstract_syntax import (
     FPCore,
-    Let,
-    Bindings,
-    Binding,
     Var,
     Num,
     constructors,
@@ -52,88 +47,20 @@ def expr_to_egglog(expr: TreeGrammar) -> str:
             raise ValueError(f"Unable to process expression: {expr}")
 
 
-@lru_cache(maxsize=None)
-def update_egraph(
-    egraph: EGraph, var: TreeGrammar, value: TreeGrammar, saturation_depth=SATURATION_RUNS
-) -> EGraph:
-    """Return a new egraph that additionally knows ``value`` is equal to ``var``.
-
-    This is how a ``let`` binding is folded in: we add a rewrite teaching the
-    egraph that occurrences of the bound expression collapse onto the variable,
-    then re-saturate.
-    """
-    new_egraph = EGraph(record=True)
-    ran_commands = egraph.commands()
-    assert ran_commands is not None, "got EGraph with record=False"
-    lines = [
-        line
-        for line in ran_commands.splitlines()
-        if not line.startswith("(run-schedule")
-    ]
-    new_egraph.run_program(*new_egraph.parse_program("\n".join(lines)))
-
-    # build egglog rewrite: the bound value rewrites to the variable
-    var_egglog = expr_to_egglog(var)
-    value_egglog = expr_to_egglog(value)
-    rewrite_str = f"(rewrite {value_egglog} {var_egglog})"
-
-    # run the commands and saturate the egraph
-    saturate_str = f"(run {saturation_depth})"
-    new_commands = new_egraph.parse_program(rewrite_str + "\n" + saturate_str)
-    new_egraph.run_program(*new_commands)
-    return new_egraph
-
-
 @rewrite
-def fpcore_equivalence(
-    egraph: EGraph, t: TreeGrammar, used_names: Optional[frozenset[str]] = None
-) -> TreeGrammar:
+def fpcore_equivalence(egraph: EGraph, t: TreeGrammar) -> TreeGrammar:
     """Prune a FPCore program space down to programs equivalent to the reference.
 
-    The ``FPCore`` wrapper is peeled off (its argument list is left unconstrained),
-    each ``let``/``let*`` binding is folded into the egraph, and the remaining
-    arithmetic body is intersected with the egraph.
+    The ``FPCore`` wrapper is peeled off (its argument list is left unconstrained)
+    and the arithmetic body is intersected with the egraph.
     """
-    if used_names is None:
-        used_names = frozenset()
     match t:
         case EmptySet():
             return EmptySet()
         case Union(children):
-            return Union.of(
-                fpcore_equivalence(egraph, child, used_names) for child in children
-            )
+            return Union.of(fpcore_equivalence(egraph, child) for child in children)
         case FPCore(args, body):
             # The declared arguments are free; only the body is constrained.
-            return FPCore.of(args, fpcore_equivalence(egraph, body, used_names))
-        case Let(bindings, body):
-            bindings_tree = as_tree(bindings)
-            if bindings_tree is None:
-                # bindings not yet fully decoded; defer the constraint
-                return t
-            current_egraph = egraph
-            names = used_names
-            node: TreeGrammar = bindings_tree
-            # `bindings` is a non-empty list: a cons (Bindings) for >1 binding,
-            # or a bare Binding for the last/only one.
-            while True:
-                match node:
-                    case Bindings(
-                        Binding(Var(ASTLeaf(prefix=name)) as var, value), rest
-                    ):
-                        if name in names:
-                            return EmptySet()
-                        current_egraph = update_egraph(current_egraph, var, value)
-                        names = names | {name}
-                        node = rest
-                    case Binding(Var(ASTLeaf(prefix=name)) as var, value):
-                        if name in names:
-                            return EmptySet()
-                        current_egraph = update_egraph(current_egraph, var, value)
-                        names = names | {name}
-                        break
-                    case _:
-                        return EmptySet()
-            return fpcore_equivalence(current_egraph, body, names)
+            return FPCore.of(args, fpcore_equivalence(egraph, body))
         case _:
             return in_egraph(egraph)(t)

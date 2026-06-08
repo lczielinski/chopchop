@@ -18,7 +18,7 @@ from core.rewrite import rewriter
 from llm.realizability import RealizabilityChecker
 from llm.run_llm import Config, LanguageModelRunner, ModelConfig
 
-from .egraph import egraph_from_egglog
+from .egraph import egraph_from_egglog, in_egraph
 from .fpcore import (
     SATURATION_RUNS,
     fpcore_equivalence,
@@ -67,29 +67,48 @@ def load_benchmark(name: str) -> Tuple[str, str]:
 
 
 def canonical(program: str) -> str:
-    """Canonical form for distinctness checks.
+    """Canonical form for distinctness checks: just collapse whitespace.
 
-    Collapses whitespace and renames let-bound variables to positional placeholders, so
-    programs that differ only by binding names or formatting (e.g. `(let ([d E]) (sqrt d))`
-    vs `(let ([distance E]) (sqrt distance))`) compare equal. Genuinely different
-    refactorings keep different canonical forms. The free FPCore arguments are left alone,
-    so only the intermediate let-bound names are normalized. (Bound names are unique in this
-    grammar, so a token-level rename is sufficient.)
+    Programs are plain arithmetic s-expressions (no `let` bindings), so two outputs are
+    "the same" only if they differ purely in formatting.
     """
-    text = re.sub(r"\s+", " ", program).strip()
-    bound = re.findall(r"\[\s*([A-Za-z_]\w*)", text)
-    renames = {name: f"$v{i}" for i, name in enumerate(bound)}
-    return re.sub(r"\b[A-Za-z_]\w*\b", lambda m: renames.get(m.group(), m.group()), text)
+    return re.sub(r"\s+", " ", program).strip()
+
+
+# Max FPCore nesting depth accepted during decoding. The deepest benchmark (variance)
+# nests ~9 levels; legitimate rewrites add only a few. Cyclic rules (reciprocal, squaring)
+# otherwise let a stuck model build unbounded `(* (/ (* ...)))` / `(pow (pow ...))` towers
+# that stay "realizable" and run to max_new_tokens. This bound stops the runaway while
+# leaving generous headroom for real rewrites.
+MAX_DEPTH = 18
+
+# Per-token realizability timeout (seconds). After the e-graph index is pre-warmed,
+# legitimate checks are sub-second; a degenerate cyclic-tower prefix takes tens of seconds.
+# Aborting past this bound (and rejecting the token) stops the stall without blocking real
+# programs. Generous vs the sub-second legitimate cost.
+CHECK_TIMEOUT = 5.0
+
+# Only apply the timeout once a prefix nests at least this deep. Shallow/wide-open prefixes
+# (the empty body) are legitimately slow but realizable, so they're exempt; degenerate
+# towers only show up deeper, where legitimate checks are sub-second.
+TIMEOUT_MIN_DEPTH = 5
 
 
 def build_checker(source: str) -> RealizabilityChecker:
     """Build the egraph-constrained checker for a benchmark's egglog source."""
     egraph = egraph_from_egglog(source, "start", "Math")
-    vars = re.findall(r'Var\s*"([^"]+)"', source)
+    # Pre-warm the e-graph index (root_and_eclass_mapping serializes + indexes the whole
+    # e-graph and is cached). Doing it here pays that one-time cost at build instead of on
+    # the first token, so every per-token check is sub-second and the timeout below cleanly
+    # targets only the degenerate (cyclic-tower) checks.
+    in_egraph(egraph)
     return RealizabilityChecker(
-        lambda term: fpcore_equivalence(egraph, term, frozenset(vars)),
+        lambda term: fpcore_equivalence(egraph, term),
         fpcore_grammar,
         fpcore_lexer_spec,
+        max_depth=MAX_DEPTH,
+        timeout=CHECK_TIMEOUT,
+        timeout_min_depth=TIMEOUT_MIN_DEPTH,
     )
 
 

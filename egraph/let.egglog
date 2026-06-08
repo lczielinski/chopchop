@@ -1,6 +1,5 @@
 (datatype Math
 (Num i64)
-(Str String)
 (Var String)
 (Add Math Math)
 (Sub Math Math)
@@ -8,8 +7,7 @@
 (Pow Math Math)
 (Sqrt Math)
 (Mul Math Math)
-(Div Math Math)
-(App Math Math))
+(Div Math Math))
 
 
 (rewrite (Add a b)
@@ -32,6 +30,14 @@
 (rewrite (Mul a (Add b c))
         (Add (Mul a b) (Mul a c)))
 
+;; NOTE: Herbie's "safe" contracting/normalization rules (remove-double-neg, the identity
+;; eliminations a+0=a / a*1=a / a-a=0 / a/a=1, etc.) were tried here and REVERTED. Although
+;; they only shrink terms, they enrich the e-graph (more e-nodes merged into each e-class),
+;; and the per-token decoding check intersects the whole e-graph with the grammar on the
+;; wide-open `(FPCore ` prefix — that first-token check jumped from ~1.7s to a >30s hang.
+;; In this constrained-decoder, ANY rule that enriches e-classes is too expensive per token,
+;; not just the expansive ones. See egraph/probe_prefix.py.
+
 ;; NOTE ON ENRICHING THIS RULE SET: the sound Herbie rules (factoring, full associativity,
 ;; fraction splitting) are correct for the reals AND, with iteration-bounded saturation,
 ;; do not loop. But they still enlarge the e-graph, and decoding intersects the WHOLE
@@ -42,13 +48,15 @@
 ;; afford a Herbie-sized rule set without a cheaper per-token check. See egraph/probe_prefix.py.
 
 
-;; squaring: a*a <-> (pow a 2). The EXPANDING direction is guarded to a leaf
-;; variable base: expanding a squared SUM (e.g. (pow (- x y) 2)) would feed the
-;; distribution rule above and blow up saturation, so only (Var _)^2 expands.
-;; (NOTE: closing the distribute<->factor loop with the reverse of the rule above,
-;; or expanding pow on sums, both make `(run 100)` explode — see egraph/probe.py.)
+;; squaring: rewrite a squared VARIABLE to a product, so the model may write `(* b b)`
+;; for `(pow b 2)`. Guarded to a leaf `(Var _)` base for two reasons:
+;;   - expanding a squared SUM (e.g. (pow (- x y) 2)) feeds the distribution rule above
+;;     and blows up saturation;
+;;   - the reverse rule `(Mul a a) -> (Pow a 2)` is deliberately OMITTED: it turns every
+;;     product-of-equals into a pow, which lets the checker accept unbounded `(pow (pow
+;;     (pow ...)))` towers (decoding then runs to max_new_tokens, and the per-token check
+;;     itself blows up as the tower deepens). See egraph/probe.py.
 (rewrite (Pow (Var v) (Num 2)) (Mul (Var v) (Var v)))
-(rewrite (Mul a a) (Pow a (Num 2)))
 
 ;; for some reason this makes egglog upset?
 ;; (rewrite (Div (Num a) (Num b)) (Num (/ a b)))
@@ -57,13 +65,6 @@
 (rewrite (Div (Num 1) (Mul b c)) (Mul (Div (Num 1) b) (Div (Num 1) c)))
 (rewrite (Mul (Div (Num 1) b) (Div (Num 1) c)) (Div (Num 1) (Mul b c)))
 
-(let pow (Var "pow"))
-(let sqrt (Var "sqrt"))
-
-(rewrite (Pow a b) (App (App pow a) b))
-(rewrite (App (App pow a) b) (Pow a b))
-(rewrite (Sqrt a) (App sqrt a))
-(rewrite (App sqrt a) (Sqrt a))
 (rewrite (Pow (Sub a b) (Num 2)) (Pow (Sub b a) (Num 2)))
 
 ;; --- conjugate rationalization (enables the Citardauq / numerically-stable form) ---

@@ -9,13 +9,6 @@ args: id
     | id args        {Args}
 
 body: expr
-    | "(" "let" "(" bindings ")" body ")"  {Let}
-    | "(" "let*" "(" bindings ")" body ")" {Let}
-
-bindings: binding
-        | binding bindings {Bindings}
-
-binding: "[" id expr "]"   {Binding}
 
 expr: id
     | num

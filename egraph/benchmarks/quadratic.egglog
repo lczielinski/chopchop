@@ -8,8 +8,8 @@
   (Div
     (Add
       (Sub (Num 0) b)
-      (App sqrt
+      (Sqrt
         (Sub
-          (App (App pow b) (Num 2))
+          (Pow b (Num 2))
           (Mul (Mul (Num 4) a) c))))
     (Mul (Num 2) a)))

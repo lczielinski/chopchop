@@ -5,8 +5,8 @@
 (let y1 (Var "y1"))
 (let y2 (Var "y2"))
 
-(let start (App sqrt (
+(let start (Sqrt (
     Add
-    (App (App pow (Sub x1 x2)) (Num 2))
-    (App (App pow (Sub y1 y2)) (Num 2))
+    (Pow (Sub x1 x2) (Num 2))
+    (Pow (Sub y1 y2) (Num 2))
 )))

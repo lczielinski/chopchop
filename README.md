@@ -129,17 +129,17 @@ Generated programs are written in a small subset of [FPCore 2.0](https://fptalks
   (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))
 ```
 
-The subset (see `egraph/fpcore.lark`) is: an `(FPCore (args...) body)` header; the arithmetic
-operators `+ - * /` (binary) and `-` (unary negation); the operators `sqrt` and `pow`; integer
-literals and variables; and `let`/`let*` bindings `(let ([v e] ...) body)` whose values are
-arithmetic expressions. There is no generic function application — only these numeric operators —
-so the benchmarks are all numeric programs.
+The subset (see `egraph/fpcore.lark`) is: an `(FPCore (args...) body)` header where `body` is a
+single arithmetic expression built from the operators `+ - * /` (binary) and `-` (unary
+negation), `sqrt` and `pow`, integer literals, and variables. There is no generic function
+application and no `let` bindings — only these numeric operators — so the benchmarks are all
+numeric expressions.
 
 `egraph/fpcore.py` translates this syntax to egglog (`expr_to_egglog`) and contains the
-equivalence pruner (`fpcore_equivalence`): it peels off the `FPCore` wrapper, folds each `let`
-binding into the egraph, and intersects the remaining body with the reference's egraph. The
-`Math` datatype's `Pow`/`Sqrt` constructors are tied to the reference's `App`-encoded `pow`/`sqrt`
-by bidirectional rules in `egraph/let.egglog`, so first-class `(pow ...)`/`(sqrt ...)` match.
+equivalence pruner (`fpcore_equivalence`): it peels off the `FPCore` wrapper and intersects the
+body with the reference's egraph. Reference programs and generated programs share the one
+`Math` datatype in `egraph/let.egglog`, whose constructor names (`Add`, `Mul`, `Pow`, `Sqrt`,
+…) match the FPCore AST node names, so `expr_to_egglog` translates generically.
 
 Run a single benchmark (from the repository root):
 ```bash

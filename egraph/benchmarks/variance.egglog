@@ -6,19 +6,19 @@
 
 (let start
   (Div
-    (App sqrt
+    (Sqrt
       (Add
         (Add
-          (App (App pow
+          (Pow
             (Sub a
-              (Div (Add (Add a b) c) (Num 3))))
+              (Div (Add (Add a b) c) (Num 3)))
             (Num 2))
-          (App (App pow
+          (Pow
             (Sub b
-              (Div (Add (Add a b) c) (Num 3))))
+              (Div (Add (Add a b) c) (Num 3)))
             (Num 2)))
-        (App (App pow
+        (Pow
           (Sub c
-            (Div (Add (Add a b) c) (Num 3))))
+            (Div (Add (Add a b) c) (Num 3)))
           (Num 2))))
     (Num 3)))

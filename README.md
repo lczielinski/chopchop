@@ -149,11 +149,13 @@ Tokens stream to the terminal as they are decoded. The model runs on the Apple S
 (MPS) in bfloat16 by default. Omit `--benchmark` to run all benchmarks. Useful options:
 - `--model NAME` (default: `qwen14b`) — one of `qwen14b`, `qwen7b`, `codestral`,
   `deepseek-v2`, `llama13b`, `llama7b`, `deepseek`
-- `--temperature FLOAT` (default: `0.5`)
+- `--temperature FLOAT` (default: `0.8`)
 - `--top-p FLOAT` — nucleus sampling cutoff (default: `0.9`; `1.0` disables tail filtering)
 - `--num-programs N` / `-n N` — generate `N` distinct equivalent programs (default: `1`)
-- `--max-tries N` — cap generation attempts per benchmark (default: `10`)
+- `--max-tries N` — cap LLM generation attempts per benchmark (default: `25`)
 - `--no-stream` — disable live token streaming
+- `--no-egraph-targets` — disable bounded target extraction from the saturated e-graph
+- `--num-egraph-targets N` — number of nontrivial e-graph target bodies to extract per benchmark (default: `6`)
 - `--output-dir DIR` — folder for per-run output files; each run writes a new timestamped `.txt` with the settings at the top (default: `outputs/`)
 
 For example, to generate 3 distinct programs equivalent to the quadratic formula, allowing up
@@ -162,11 +164,15 @@ to 20 attempts:
 uv run python -m egraph.run --benchmark quadratic.egglog -n 3 --max-tries 20
 ```
 
-To encourage distinct programs, the prompt lists the programs already produced for the
-benchmark and asks for one with different floating-point behavior (a real rewrite such as
-re-association, distribution, or factoring — not a commutative reordering, which rounds
-identically). Accepted programs are deduplicated by a canonical form (whitespace and
-`let`-bound variable names normalized), so trivial renamings are not counted as distinct.
+Before LLM decoding, the runner now extracts a bounded, structurally diverse set of
+nontrivial equivalent bodies from the root e-class. Those targets can contribute programs
+directly (for example, the Citardauq form of the quadratic formula) and any remaining targets
+are rotated into prompts as rewrite-system-discovered shapes. This is generic over the
+saturated e-graph rather than benchmark-specific prompting. To encourage additional distinct
+programs, the prompt lists the programs already produced for the benchmark and asks for one
+with different floating-point behavior from a different structural rewrite family when
+possible. Accepted programs are deduplicated by a canonical form (whitespace normalized), so
+trivial formatting changes are not counted as distinct.
 
 ### Models and memory
 Models are loaded with `transformers` in bfloat16 onto MPS, so the whole model must fit in

@@ -83,33 +83,19 @@ def canonical(program: str) -> str:
     return re.sub(r"\s+", " ", program).strip()
 
 
-# Max FPCore nesting depth accepted during decoding. The deepest benchmark (variance)
-# nests ~9 levels; legitimate rewrites add only a few. Cyclic rules (reciprocal, squaring)
-# otherwise let a stuck model build unbounded `(* (/ (* ...)))` / `(pow (pow ...))` towers
-# that stay "realizable" and run to max_new_tokens. This bound stops the runaway while
-# leaving generous headroom for real rewrites.
+# Guards against degenerate cyclic-rule towers during decoding (see RealizabilityChecker).
+# The deepest benchmark nests ~9 levels, so 18 leaves headroom for real rewrites; legitimate
+# checks are sub-second, so a 5s cap only catches runaway ones; the timeout is skipped for
+# shallow prefixes, which are legitimately slow but realizable.
 MAX_DEPTH = 18
-
-# Per-token realizability timeout (seconds). After the e-graph index is pre-warmed,
-# legitimate checks are sub-second; a degenerate cyclic-tower prefix takes tens of seconds.
-# Aborting past this bound (and rejecting the token) stops the stall without blocking real
-# programs. Generous vs the sub-second legitimate cost.
 CHECK_TIMEOUT = 5.0
-
-# Only apply the timeout once a prefix nests at least this deep. Shallow/wide-open prefixes
-# (the empty body) are legitimately slow but realizable, so they're exempt; degenerate
-# towers only show up deeper, where legitimate checks are sub-second.
 TIMEOUT_MIN_DEPTH = 5
 
 
 def build_checker(source: str) -> RealizabilityChecker:
     """Build the egraph-constrained checker for a benchmark's egglog source."""
     egraph = egraph_from_egglog(source, "start", "Math")
-    # Pre-warm the e-graph index (root_and_eclass_mapping serializes + indexes the whole
-    # e-graph and is cached). Doing it here pays that one-time cost at build instead of on
-    # the first token, so every per-token check is sub-second and the timeout below cleanly
-    # targets only the degenerate (cyclic-tower) checks.
-    in_egraph(egraph)
+    in_egraph(egraph)  # pre-warm the (cached) e-graph index so it's not charged to the first token
     return RealizabilityChecker(
         lambda term: fpcore_equivalence(egraph, term),
         fpcore_grammar,
@@ -137,11 +123,11 @@ def build_prompt(original: str, prior: list[str]) -> str:
             "but evaluates with different floating-point behavior. Use one of the "
             "rounding-changing rewrites: re-associate a sum or product, rewrite a division "
             "as multiplication by a reciprocal (`(/ x y)` -> `(* x (/ 1 y))`), split a "
-            "fraction over a sum (`(/ (+ x y) c)` -> `(+ (/ x c) (/ y c))`), expand a "
-            "squared variable (`(pow v 2)` -> `(* v v)`), distribute a product over a sum, "
-            "or rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate. Keep sums "
-            "written as sums in the same orientation and do not factor; do not merely "
-            "reorder the operands of a commutative operator."
+            "fraction over a sum or difference, split a quotient of products, expand a "
+            "squared variable (`(pow v 2)` -> `(* v v)`), distribute a product over a sum "
+            "or difference, or rationalize a `(+ (- b) (sqrt d))` numerator by its "
+            "conjugate. Keep sums written as sums in the same orientation and do not "
+            "factor; do not merely reorder the operands of a commutative operator."
         )
     return prompt
 

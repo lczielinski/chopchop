@@ -16,26 +16,18 @@ fpcore_lexer_spec, fpcore_grammar = parse_attribute_grammar(
     constructors, fpcore_source, "fpcore"
 ).build_parser()
 
-# Iterations of equality saturation to run. The conjugate-rationalization + reciprocal +
-# cancellation rules in let.egglog make saturation NON-terminating: the e-graph keeps
-# growing super-linearly, and the per-token decoding check intersects the WHOLE e-graph
-# with the grammar, so its cost tracks e-graph size. Measured on quadratic (egraph/probe.py):
-#   run 6 -> 341 eclasses / 1470 enodes, wide-open check 0.19s, Citardauq reachable
-#   run 8 -> 3863 eclasses / 16142 enodes, wide-open check 16.5s
-# So 6 is the sweet spot: the minimum depth that reaches the Citardauq derivation, while
-# staying just below the blow-up. This trades completeness (some valid-but-deeper
-# equivalences are missed -> rejected, never wrongly accepted) for a fast, terminating check.
+# Iterations of equality saturation. The rules don't terminate (the e-graph grows
+# super-linearly), and the per-token check cost tracks e-graph size, so this is capped low.
+# 6 is the sweet spot: the minimum that reaches the Citardauq derivation, just below the
+# blow-up (run 8 is ~10x larger and ~80x slower to check). Trades completeness for speed.
 SATURATION_RUNS = 6
 
 
 def expr_to_egglog(expr: TreeGrammar) -> str:
     """Translate a concrete arithmetic expression into an egglog s-expression.
 
-    Only the let-free arithmetic fragment reaches this function: the ``FPCore``
-    wrapper and ``let`` bindings are peeled off by ``fpcore_equivalence`` before
-    any term is handed to egglog. The arithmetic node names (Add, Sub, Mul, Div,
-    Neg, Sqrt, Pow) match the egglog ``Math`` datatype, so they translate
-    generically.
+    The arithmetic node names (Add, Sub, Mul, Div, Neg, Sqrt, Pow) match the egglog
+    ``Math`` datatype, so they translate generically.
     """
     match expr:
         case Var(ASTLeaf(prefix=name)):

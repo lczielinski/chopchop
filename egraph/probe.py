@@ -96,12 +96,12 @@ CANDIDATES = {
             "(FPCore (start end scale) (+ start (* (- end start) scale)))",
             True,
         ),
-        # Semantically equivalent, but this spelling needs reverse distribution/factoring,
-        # which is omitted from the decoding rule set for per-token performance.
+        # Distribute over subtraction. This is a rounding-changing rewrite, and the
+        # supporting rule stays small under the current run cap.
         (
             "distribute",
             "(FPCore (start end scale) (+ start (- (* end scale) (* start scale))))",
-            False,
+            True,
         ),
         # Needs identity and factoring rules that are intentionally omitted.
         (

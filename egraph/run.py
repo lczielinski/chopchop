@@ -333,6 +333,7 @@ def format_settings(
             f"# top_p: {config.top_p}",
             f"# repetition_penalty: {config.repetition_penalty}",
             f"# max_new_tokens: {config.max_new_tokens}",
+            f"# max_token_tries: {config.max_token_tries}",
             f"# num_programs: {args.num_programs}",
             f"# max_tries: {args.max_tries}",
             f"# egraph_targets: {args.egraph_targets}",
@@ -397,6 +398,13 @@ def main() -> None:
         "class is narrow, so more attempts materially raise the hit rate.",
     )
     parser.add_argument(
+        "--max-token-tries",
+        type=int,
+        default=256,
+        help="Abort one LLM attempt after this many rejected token proposals at the same "
+        "prefix (default: 256).",
+    )
+    parser.add_argument(
         "--stream",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -442,6 +450,7 @@ def main() -> None:
         temperature=args.temperature,
         top_p=args.top_p,
         repetition_penalty=1.2,
+        max_token_tries=args.max_token_tries,
     )
     context = load_file(BENCHMARKS_DIR / "context.md")
 

@@ -153,6 +153,7 @@ Tokens stream to the terminal as they are decoded. The model runs on the Apple S
 - `--top-p FLOAT` — nucleus sampling cutoff (default: `0.9`; `1.0` disables tail filtering)
 - `--num-programs N` / `-n N` — generate `N` distinct equivalent programs (default: `1`)
 - `--max-tries N` — cap LLM generation attempts per benchmark (default: `25`)
+- `--max-token-tries N` — abort one LLM attempt after `N` rejected token proposals at the same prefix (default: `256`)
 - `--no-stream` — disable live token streaming
 - `--no-egraph-targets` — disable bounded target extraction from the saturated e-graph
 - `--num-egraph-targets N` — number of nontrivial e-graph target bodies to extract per benchmark (default: `6`)

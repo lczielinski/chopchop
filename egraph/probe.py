@@ -110,6 +110,51 @@ CANDIDATES = {
             False,
         ),
     ],
+    "power": [
+        (
+            "reference",
+            "(FPCore (power hours price_per_kwh) (* (* (/ power 1000) hours) price_per_kwh))",
+            True,
+        ),
+        # Collect the denominator after reassociating the product.
+        (
+            "single-quotient",
+            "(FPCore (power hours price_per_kwh) (/ (* (* hours power) price_per_kwh) 1000))",
+            True,
+        ),
+        # Move the 1000 divisor to a different product factor.
+        (
+            "denom-on-price",
+            "(FPCore (power hours price_per_kwh) (* (* hours power) (/ price_per_kwh 1000)))",
+            True,
+        ),
+    ],
+    "gravity": [
+        (
+            "reference",
+            "(FPCore (m1 m2 r) (* (pow 10 (- 15)) (/ (* (* 66743 m1) m2) (pow r 2))))",
+            True,
+        ),
+        # Split r^2 into two denominator factors and expose the reciprocal form.
+        (
+            "split-r2-denom",
+            "(FPCore (m1 m2 r) (* (* (* (/ 1 r) 66743) (pow 10 (- 15))) (/ (* m1 m2) r)))",
+            True,
+        ),
+    ],
+    "variance": [
+        (
+            "reference",
+            "(FPCore (a b c) (/ (sqrt (+ (+ (pow (- a (/ (+ (+ a b) c) 3)) 2) (pow (- b (/ (+ (+ a b) c) 3)) 2)) (pow (- c (/ (+ (+ a b) c) 3)) 2))) 3))",
+            True,
+        ),
+        # Each squared residual can flip sign without changing the real value.
+        (
+            "flip-residuals",
+            "(FPCore (a b c) (/ (sqrt (+ (+ (pow (- (/ (+ (+ a b) c) 3) a) 2) (pow (- (/ (+ (+ a b) c) 3) b) 2)) (pow (- (/ (+ (+ a b) c) 3) c) 2))) 3))",
+            True,
+        ),
+    ],
 }
 
 

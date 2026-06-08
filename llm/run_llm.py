@@ -31,6 +31,8 @@ class Config:
     timeout: float = 99999.0  # no timeout by default
     # Reject the attempt if it runs this long without finishing.
     max_new_tokens: int = 100
+    # Reject the attempt if the model keeps proposing invalid tokens at one prefix.
+    max_token_tries: int = 256
 
 
 @dataclass
@@ -214,6 +216,8 @@ class LanguageModelRunner:
             else:
                 forbidden_tokens[tuple(generated_tokens)].add(new_token)
                 cache.crop(-1)
+                if tries >= config.max_token_tries:
+                    break
         return RunInfo(
             llm_finished=False,
             output=decoded_output,

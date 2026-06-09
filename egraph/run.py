@@ -141,8 +141,8 @@ def build_prompt(
             "family when possible. Useful rounding-changing rewrites include: re-associate "
             "a sum or product, rewrite a division as multiplication by a reciprocal "
             "(`(/ x y)` -> `(* x (/ 1 y))`), split a fraction over a sum or difference, "
-            "split a quotient of products, expand a squared variable (`(pow v 2)` -> "
-            "`(* v v)`), distribute a product over a sum or difference, or rationalize a "
+            "split a quotient of products, distribute a product over a sum or difference, "
+            "or rationalize a "
             "`(+ (- b) (sqrt d))` numerator by its conjugate. Keep sums written as sums in "
             "the same orientation and do not factor; do not merely reorder the operands "
             "of a commutative operator."
@@ -316,6 +316,14 @@ def main() -> None:
         "prefix (default: 256).",
     )
     parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=256,
+        help="Abort one LLM attempt after generating this many tokens without completing an "
+        "equivalent program (default: 256). Long references (e.g. variance, whose squared "
+        "residuals each repeat the mean) need a higher cap to finish.",
+    )
+    parser.add_argument(
         "--stream",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -347,6 +355,7 @@ def main() -> None:
         top_p=args.top_p,
         repetition_penalty=1.2,
         max_token_tries=args.max_token_tries,
+        max_new_tokens=args.max_new_tokens,
     )
     context = load_file(BENCHMARKS_DIR / "context.md")
 

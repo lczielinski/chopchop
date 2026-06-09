@@ -128,14 +128,14 @@ Generated programs are written in a small subset of [FPCore 2.0](https://fptalks
 
 ```
 (FPCore (a b c)
-  (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))
+  (/ (+ (- b) (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))
 ```
 
 The subset (see `egraph/fpcore.lark`) is: an `(FPCore (args...) body)` header where `body` is a
 single arithmetic expression built from the operators `+ - * /` (binary) and `-` (unary
-negation), `sqrt` and `pow`, integer literals, and variables. There is no generic function
-application and no `let` bindings — only these numeric operators — so the benchmarks are all
-numeric expressions.
+negation), `sqrt`, integer literals, and variables. There is no exponentiation operator (write
+a square as a product, e.g. `(* b b)`), no generic function application, and no `let` bindings —
+only these numeric operators — so the benchmarks are all numeric expressions.
 
 `egraph/fpcore.py` translates this syntax to egglog (`expr_to_egglog`) and contains the
 equivalence pruner (`fpcore_equivalence`): it peels off the `FPCore` wrapper and intersects the

@@ -8,15 +8,15 @@ where `body` is an expression built from:
 - variables and integer literals;
 - the binary arithmetic operators `(+ a b)`, `(- a b)`, `(* a b)`, `(/ a b)`;
 - unary negation `(- a)`;
-- `(sqrt a)` and `(pow a b)`.
+- `(sqrt a)`.
 
-There is no other function application and no variable bindings: the ONLY operators are `+ - * / sqrt pow`. Use exactly the variables that appear in the original program; do not introduce new ones.
+There is no other function application and no variable bindings: the ONLY operators are `+ - * / sqrt`. There is no exponentiation operator — write a square as a product, e.g. `(* b b)`, not `(pow b 2)`. Use exactly the variables that appear in the original program; do not introduce new ones.
 
 As examples, syntactically valid programs would include:
 
 ```
 (FPCore (x)
-  (- (pow (sqrt x) 2) 3))
+  (- (* (sqrt x) (sqrt x)) 3))
 ```
 
 and
@@ -31,9 +31,8 @@ Your job is to refactor programs into *equivalent* ones that evaluate with *diff
 - rewrite a division as multiplication by a reciprocal, e.g. `(/ x (* 2 a))` to `(* x (/ 1 (* 2 a)))`;
 - split a fraction over a sum or difference, e.g. `(/ (+ x y) c)` to `(+ (/ x c) (/ y c))` or `(/ (- x y) c)` to `(- (/ x c) (/ y c))`;
 - split a quotient of products, e.g. `(/ (* a b) (* c d))` to `(* (/ a c) (/ b d))`;
-- expand a squared variable, e.g. `(pow b 2)` to `(* b b)` (or contract `(* b b)` to `(pow b 2)`);
 - distribute a product over a sum or difference, e.g. `(* a (+ x y))` to `(+ (* a x) (* a y))` or `(* a (- x y))` to `(- (* a x) (* a y))`;
-- rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate (the "Citardauq" trick).
+- rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate.
 
 A worked example of why this matters numerically: consider
 
@@ -70,9 +69,8 @@ a * (1 / b) => a / b
 (a - b) / c => (a / c) - (b / c)
 a * (b - c) => a*b - a*c
 (a*b) / (c*d) => (a/c) * (b/d)
-pow (a - b) 2 => pow (b - a) 2
-pow x 2 => x * x        (x a variable)
-x * x => pow x 2
-a + sqrt(d) => (a*a - d) / (a - sqrt(d))     (rationalize by the conjugate; e.g. gives the Citardauq form of the quadratic formula)
+(a - b) * (a - b) => (b - a) * (b - a)
+(-a) * (-a) => a * a
+a + sqrt(d) => (a*a - d) / (a - sqrt(d))
 
 Never introduce features not in the language (in particular, no `let` bindings — output a single arithmetic expression). Never include comments or explanations. ONLY output code, then IMMEDIATELY stop. Use only the variables from the original program.

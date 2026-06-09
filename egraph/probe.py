@@ -29,64 +29,52 @@ CANDIDATES = {
         # the reference itself, written in FPCore
         (
             "reference",
-            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))",
-            True,
-        ),
-        # pow b 2 -> b*b  (needs Pow<->Mul rule)
-        (
-            "pow->mul",
             "(FPCore (a b c) (/ (+ (- b) (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))",
             True,
         ),
         # factor 4ac differently: 4*(a*c) vs (4*a)*c  (assoc, already supported)
         (
             "reassoc-4ac",
-            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (pow b 2) (* 4 (* a c))))) (* 2 a)))",
+            "(FPCore (a b c) (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))",
             True,
         ),
         # div as mult by reciprocal of (2a)  (already supported)
         (
             "recip",
-            "(FPCore (a b c) (* (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c)))) (/ 1 (* 2 a))))",
+            "(FPCore (a b c) (* (+ (- b) (sqrt (- (* b b) (* (* 4 a) c)))) (/ 1 (* 2 a))))",
             True,
         ),
         # NOT equivalent: wrong sign on b
         (
             "wrong-sign",
-            "(FPCore (a b c) (/ (+ b (sqrt (- (pow b 2) (* (* 4 a) c)))) (* 2 a)))",
+            "(FPCore (a b c) (/ (+ b (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))",
             False,
         ),
         # Citardauq (conjugate) form: 2c / (-b - sqrt(b^2-4ac)). Equal in exact reals,
         # numerically distinct. Needs multiply-by-conjugate, not a ring axiom.
         (
             "citardauq",
-            "(FPCore (a b c) (/ (* 2 c) (- (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))",
+            "(FPCore (a b c) (/ (* 2 c) (- (- b) (sqrt (- (* b b) (* (* 4 a) c))))))",
             True,
         ),
         # adversarial: the OTHER root, 2c/(-b + sqrt D). NOT equal to the reference root.
         (
             "citardauq-wrong",
-            "(FPCore (a b c) (/ (* 2 c) (+ (- b) (sqrt (- (pow b 2) (* (* 4 a) c))))))",
+            "(FPCore (a b c) (/ (* 2 c) (+ (- b) (sqrt (- (* b b) (* (* 4 a) c))))))",
             False,
         ),
     ],
     "distance": [
         (
             "reference",
-            "(FPCore (x1 x2 y1 y2) (sqrt (+ (pow (- x1 x2) 2) (pow (- y1 y2) 2))))",
+            "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))",
             True,
         ),
-        # Semantically equivalent, but the Pow->Mul rule is deliberately guarded to
-        # variable bases; expanding squared compound expressions blows up saturation.
-        (
-            "pow->mul",
-            "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))",
-            False,
-        ),
-        # Also semantically equivalent, but needs the omitted squared-difference expansion.
+        # Fully expanded squared difference: (x1-x2)^2 = x1^2 - 2*x1*x2 + x2^2. Equivalent,
+        # but needs the squared-difference expansion, which is heavy under the run cap.
         (
             "expand-sq",
-            "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (pow x1 2) (* (* 2 x1) x2)) (pow x2 2)) (pow (- y1 y2) 2))))",
+            "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (* x1 x1) (* (* 2 x1) x2)) (* x2 x2)) (* (- y1 y2) (- y1 y2)))))",
             False,
         ),
     ],
@@ -132,26 +120,26 @@ CANDIDATES = {
     "gravity": [
         (
             "reference",
-            "(FPCore (m1 m2 r) (* (pow 10 (- 15)) (/ (* (* 66743 m1) m2) (pow r 2))))",
+            "(FPCore (m1 m2 r) (* (/ 1 1000000000000000) (/ (* (* 66743 m1) m2) (* r r))))",
             True,
         ),
-        # Split r^2 into two denominator factors and expose the reciprocal form.
+        # Split r*r into two denominator factors and expose the reciprocal form.
         (
             "split-r2-denom",
-            "(FPCore (m1 m2 r) (* (* (* (/ 1 r) 66743) (pow 10 (- 15))) (/ (* m1 m2) r)))",
+            "(FPCore (m1 m2 r) (* (* (* (/ 1 r) 66743) (/ 1 1000000000000000)) (/ (* m1 m2) r)))",
             True,
         ),
     ],
     "variance": [
         (
             "reference",
-            "(FPCore (a b c) (/ (sqrt (+ (+ (pow (- a (/ (+ (+ a b) c) 3)) 2) (pow (- b (/ (+ (+ a b) c) 3)) 2)) (pow (- c (/ (+ (+ a b) c) 3)) 2))) 3))",
+            "(FPCore (a b c) (/ (sqrt (+ (+ (* (- a (/ (+ (+ a b) c) 3)) (- a (/ (+ (+ a b) c) 3))) (* (- b (/ (+ (+ a b) c) 3)) (- b (/ (+ (+ a b) c) 3)))) (* (- c (/ (+ (+ a b) c) 3)) (- c (/ (+ (+ a b) c) 3))))) 3))",
             True,
         ),
         # Each squared residual can flip sign without changing the real value.
         (
             "flip-residuals",
-            "(FPCore (a b c) (/ (sqrt (+ (+ (pow (- (/ (+ (+ a b) c) 3) a) 2) (pow (- (/ (+ (+ a b) c) 3) b) 2)) (pow (- (/ (+ (+ a b) c) 3) c) 2))) 3))",
+            "(FPCore (a b c) (/ (sqrt (+ (+ (* (- (/ (+ (+ a b) c) 3) a) (- (/ (+ (+ a b) c) 3) a)) (* (- (/ (+ (+ a b) c) 3) b) (- (/ (+ (+ a b) c) 3) b))) (* (- (/ (+ (+ a b) c) 3) c) (- (/ (+ (+ a b) c) 3) c)))) 3))",
             True,
         ),
     ],

@@ -4,7 +4,6 @@
   (Add Math Math)
   (Sub Math Math)
   (Neg Math)
-  (Pow Math Math)
   (Sqrt Math)
   (Mul Math Math)
   (Div Math Math))
@@ -32,9 +31,6 @@
 (rewrite (Mul a (Add b c))
   (Add (Mul a b) (Mul a c)))
 
-;; Squaring, guarded to a variable base
-(birewrite (Pow (Var v) (Num 2)) (Mul (Var v) (Var v)))
-
 (rewrite (Div a b)
   (Mul a (Div (Num 1) b)))
 (rewrite (Mul a (Div (Num 1) b))
@@ -47,15 +43,15 @@
   (Sub (Mul a b) (Mul a c)))
 (rewrite (Div (Mul a b) (Mul c d))
   (Mul (Div a c) (Div b d)))
-(rewrite (Pow (Sub a b) (Num 2))
-  (Pow (Sub b a) (Num 2)))
+(rewrite (Mul (Sub a b) (Sub a b))
+  (Mul (Sub b a) (Sub b a)))
 
-;; Conjugate rationalization p + sqrt(d) = (p^2 - d) / (p - sqrt(d))
+;; Conjugate rationalization p + sqrt(d) = (p*p - d) / (p - sqrt(d))
 (rewrite (Add p (Sqrt d))
-  (Div (Sub (Pow p (Num 2)) d) (Sub p (Sqrt d))))
+  (Div (Sub (Mul p p) d) (Sub p (Sqrt d))))
 
-(rewrite (Pow (Neg a) (Num 2))
-  (Pow a (Num 2)))
+(rewrite (Mul (Neg a) (Neg a))
+  (Mul a a))
 (rewrite (Sub a (Sub a b))
   b)
 (rewrite (Div (Mul a x) (Mul a y))

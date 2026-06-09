@@ -18,7 +18,6 @@ expr: id
     | "(" "/" expr expr ")"   {Div}
     | "(" "-" expr ")"        {Neg}
     | "(" "sqrt" expr ")"     {Sqrt}
-    | "(" "pow" expr expr ")" {Pow}
 
 id: SYMBOL {Var}
 num: INT {Num}

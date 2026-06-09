@@ -1,4 +1,4 @@
-;; sqrt (pow (x1 - x2) 2 + pow (y1 - y2) 2)
+;; sqrt ((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
 (let x1 (Var "x1"))
 (let x2 (Var "x2"))
@@ -7,6 +7,6 @@
 
 (let start (Sqrt (
     Add
-    (Pow (Sub x1 x2) (Num 2))
-    (Pow (Sub y1 y2) (Num 2))
+    (Mul (Sub x1 x2) (Sub x1 x2))
+    (Mul (Sub y1 y2) (Sub y1 y2))
 )))

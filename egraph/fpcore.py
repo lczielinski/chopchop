@@ -26,7 +26,7 @@ SATURATION_RUNS = 6
 def expr_to_egglog(expr: TreeGrammar) -> str:
     """Translate a concrete arithmetic expression into an egglog s-expression.
 
-    The arithmetic node names (Add, Sub, Mul, Div, Neg, Sqrt, Pow) match the egglog
+    The arithmetic node names (Add, Sub, Mul, Div, Neg, Sqrt) match the egglog
     ``Math`` datatype, so they translate generically.
     """
     match expr:

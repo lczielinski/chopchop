@@ -7,12 +7,11 @@ import regex
 from lark import Lark
 from regex import Pattern as Regex
 
-from core.rewrite import rewrite
-
 from ..grammar import Application
 from ..lexing.lexing import LexerSpec
 from ..lexing.token import Token
 from ..parser import Choice, Concatenation, ConstantParser, Parser, Rearrangement
+from ..rewrite import rewrite
 
 ParserFactory = Callable[[], Parser]
 

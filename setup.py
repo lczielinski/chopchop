@@ -1,8 +1,15 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
-    name='rewriting_program_spaces',
-    version='1.0',
-    description='A module for parsing partial programs into representations of sets of parse trees and sets of ASTs.',
-    packages=find_packages()
+    name="chopchop",
+    version="1.0",
+    description=(
+        "A programmable constrained decoder for semantic properties over "
+        "AST-like program spaces."
+    ),
+    packages=find_packages(),
+    package_data={
+        "core": ["lark/*.lark"],
+        "egraph": ["*.egglog", "*.lark", "benchmarks/*.egglog", "benchmarks/*.md"],
+    },
 )

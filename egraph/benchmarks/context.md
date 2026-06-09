@@ -35,6 +35,22 @@ Your job is to refactor programs into *equivalent* ones that evaluate with *diff
 - distribute a product over a sum or difference, e.g. `(* a (+ x y))` to `(+ (* a x) (* a y))` or `(* a (- x y))` to `(- (* a x) (* a y))`;
 - rationalize a `(+ (- b) (sqrt d))` numerator by its conjugate (the "Citardauq" trick).
 
+A worked example of why this matters numerically: consider
+
+```
+(FPCore (a b c)
+  (* a (- b c)))
+```
+
+Distributing the product gives the algebraically identical
+
+```
+(FPCore (a b c)
+  (- (* a b) (* a c)))
+```
+
+but these round differently. The original subtracts first, so it rounds once. The distributed form computes two separate products `a*b` and `a*c`, each rounded, and then subtracts them — so when `b` and `c` are close, `a*b` and `a*c` are nearly equal and their difference loses most of its significant digits to catastrophic cancellation.
+
 Keep the structure otherwise intact: in particular, keep a sum written as a sum in the same operand orientation (write `(+ (- b) s)`, not `(- s b)`), and do not factor a sum of products back into a product. Do NOT merely reorder the operands of a commutative operator (e.g. `a + b` to `b + a`), which produces the exact same floating-point result.
 
 A program is *equivalent* if it can be rewritten from the original using the following rules encoding basic properties of arithmetic:

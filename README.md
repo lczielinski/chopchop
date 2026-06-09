@@ -57,15 +57,17 @@ class Add(Application):
 ```
 
 At runtime, a cyclic graph representing the set of possible ASTs is constructed.
-We expose these graphs to users as `TreeGrammar` objects, which they should think of as infinite AST-like trees that have special `Union` and `EmptySet` nodes to represent a union of sets of ASTs and the empty set of ASTs respectively. 
+We expose these graphs to users as `TreeGrammar` objects, which they should think of as infinite AST-like trees that have special `Union` and `EmptySet` nodes to represent a union of sets of ASTs and the empty set of ASTs respectively.
 To manipulate these objects, users write pruners, which are functions that map `TreeGrammar`s to `TreeGrammar`s by removing undesirable programs.
-For example, 
+For example,
 ```python
-from core.grammar import TreeGrammar, Union, EmptySet, Token
+from core.grammar import TreeGrammar, Union, EmptySet, as_tree
+from core.lexing.token import Token
+from core.rewrite import rewrite
 
 @rewrite
 def sum_of_evens(t: TreeGrammar) -> TreeGrammar:
-  """Remove ASTs that contain even integers."""
+    """Remove ASTs that contain odd integers."""
     match t:
         case Union(children):
             return Union.of(sum_of_evens(c) for c in children)
@@ -81,8 +83,8 @@ def sum_of_evens(t: TreeGrammar) -> TreeGrammar:
         case _:
             return EmptySet()
 ```
-Note that the pruner does not explicitly worry about cycles. 
-The `@rewrite` annotation lifts the pruner to our cyclic datastructures.
+Note that the pruner does not explicitly worry about cycles.
+The `@rewrite` annotation lifts the pruner to our cyclic data structures.
 However, users should avoid writing pruners where the set of distinct recursive invocations will not reach a fixpoint if run on a cyclic graph, e.g., by passing around a counter.
 
 Finally, a user bundles the information into a realizability checker which can be used to constrain LLM calls.

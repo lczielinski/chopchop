@@ -50,6 +50,12 @@ CANDIDATES = {
             "(FPCore (a b c) (/ (+ b (sqrt (- (* b b) (* (* 4 a) c)))) (* 2 a)))",
             False,
         ),
+        # Split the fraction over the sum: -b/(2a) + sqrt(D)/(2a).
+        (
+            "split-fraction",
+            "(FPCore (a b c) (+ (/ (- b) (* 2 a)) (/ (sqrt (- (* b b) (* (* 4 a) c))) (* 2 a))))",
+            True,
+        ),
         # Citardauq (conjugate) form: 2c / (-b - sqrt(b^2-4ac)). Equal in exact reals,
         # numerically distinct. Needs multiply-by-conjugate, not a ring axiom.
         (
@@ -70,12 +76,12 @@ CANDIDATES = {
             "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))",
             True,
         ),
-        # Fully expanded squared difference: (x1-x2)^2 = x1^2 - 2*x1*x2 + x2^2. Equivalent,
-        # but needs the squared-difference expansion, which is heavy under the run cap.
+        # Fully expanded squared difference: (x1-x2)^2 = x1^2 - 2*x1*x2 + x2^2.
+        # Supported by the targeted var-var expansion rule in let.egglog.
         (
             "expand-sq",
             "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (* x1 x1) (* (* 2 x1) x2)) (* x2 x2)) (* (- y1 y2) (- y1 y2)))))",
-            False,
+            True,
         ),
     ],
     "lerp": [
@@ -91,11 +97,12 @@ CANDIDATES = {
             "(FPCore (start end scale) (+ start (- (* end scale) (* start scale))))",
             True,
         ),
-        # Needs identity and factoring rules that are intentionally omitted.
+        # Supported by the targeted lerp-factoring rule in let.egglog (general
+        # identity-introduction and factoring rules remain intentionally omitted).
         (
             "factor-1mscale",
             "(FPCore (start end scale) (+ (* start (- 1 scale)) (* end scale)))",
-            False,
+            True,
         ),
     ],
     "power": [

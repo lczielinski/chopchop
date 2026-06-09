@@ -20,11 +20,8 @@ from llm.realizability import RealizabilityChecker
 from llm.run_llm import Config, LanguageModelRunner, ModelConfig
 
 from .egraph import (
-    EGraph,
-    ExtractedExpression,
     egraph_from_egglog,
     in_egraph,
-    interesting_equivalent_expressions,
 )
 from .fpcore import (
     SATURATION_RUNS,
@@ -99,12 +96,12 @@ CHECK_TIMEOUT = 5.0
 TIMEOUT_MIN_DEPTH = 5
 
 
-def build_egraph_and_checker(source: str) -> tuple[EGraph, RealizabilityChecker]:
-    """Build the saturated egraph and constrained checker for an egglog source."""
+def build_checker(source: str) -> RealizabilityChecker:
+    """Build the egraph-constrained checker for a benchmark's egglog source."""
     egraph = egraph_from_egglog(source, "start", "Math")
     # Pre-warm the cached e-graph index so it is not charged to the first token.
     in_egraph(egraph)
-    checker = RealizabilityChecker(
+    return RealizabilityChecker(
         lambda term: fpcore_equivalence(egraph, term),
         fpcore_grammar,
         fpcore_lexer_spec,
@@ -112,19 +109,11 @@ def build_egraph_and_checker(source: str) -> tuple[EGraph, RealizabilityChecker]
         timeout=CHECK_TIMEOUT,
         timeout_min_depth=TIMEOUT_MIN_DEPTH,
     )
-    return egraph, checker
-
-
-def build_checker(source: str) -> RealizabilityChecker:
-    """Build the egraph-constrained checker for a benchmark's egglog source."""
-    _, checker = build_egraph_and_checker(source)
-    return checker
 
 
 def build_prompt(
     original: str,
     prior: list[str],
-    target: ExtractedExpression | None = None,
 ) -> str:
     """Prompt for one attempt.
 
@@ -138,13 +127,6 @@ def build_prompt(
         "original but evaluates with different floating-point behavior. Prefer a real "
         "rounding-changing rewrite, not a commutative reordering."
     )
-    if target is not None:
-        prompt += (
-            "\n\nThe saturated rewrite e-graph also contains this nontrivial equivalent "
-            "FPCore body. Use it as a target shape if it helps, but write one complete "
-            "FPCore program yourself:\n"
-            f"{target.text}"
-        )
     if prior:
         listed = "\n".join(prior)
         prompt += (
@@ -165,47 +147,6 @@ def build_prompt(
     return prompt
 
 
-def target_for_attempt(
-    targets: list[ExtractedExpression],
-    attempt: int,
-    enabled: bool,
-) -> ExtractedExpression | None:
-    if not enabled:
-        return None
-    if not targets:
-        return None
-    return targets[(attempt - 1) % len(targets)]
-
-
-def variables_from_source(source: str) -> list[str]:
-    """Return benchmark variables in declaration order."""
-    variables: list[str] = []
-    seen: set[str] = set()
-    for name in re.findall(r'\(Var\s+"([^"]+)"\)', source):
-        if name not in seen:
-            seen.add(name)
-            variables.append(name)
-    return variables
-
-
-def variables_from_body(body: str) -> list[str]:
-    """Fallback variable extraction for rendered FPCore bodies."""
-    variables: list[str] = []
-    seen: set[str] = set()
-    reserved = {"sqrt", "pow"}
-    for name in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body):
-        if name in reserved or name in seen:
-            continue
-        seen.add(name)
-        variables.append(name)
-    return variables
-
-
-def fpcore_from_body(body: str, variables: list[str]) -> str:
-    args = variables or variables_from_body(body)
-    return f"(FPCore ({' '.join(args)}) {body})"
-
-
 def run_benchmark(
     name: str,
     get_runner: Callable[[], LanguageModelRunner],
@@ -214,29 +155,18 @@ def run_benchmark(
     num_programs: int,
     max_tries: int,
     stream: bool,
-    use_egraph_targets: bool,
-    num_egraph_targets: int,
 ) -> BenchmarkResult:
     """Generate up to `num_programs` distinct equivalent programs for one benchmark.
 
-    Starts with bounded target expressions extracted from the root eclass, then samples
-    full programs (up to `max_tries` attempts) and keeps the distinct ones the egraph
-    checker confirms are equivalent to the reference. Every generated program is
+    Samples full programs (up to `max_tries` attempts) and keeps the distinct ones the
+    egraph checker confirms are equivalent to the reference. Every generated program is
     equivalent by construction; the re-check is a final guard.
     """
     original, source = load_benchmark(name)
-    egraph, checker = build_egraph_and_checker(source)
-    variables = variables_from_source(source)
-    egraph_targets = (
-        interesting_equivalent_expressions(egraph, limit=num_egraph_targets)
-        if use_egraph_targets
-        else []
-    )
+    checker = build_checker(source)
 
     print(f"\n=== {name} ===")
     print(f"reference: {original}")
-    if egraph_targets:
-        print(f"egraph targets: {len(egraph_targets)}")
 
     programs: list[str] = []
     seen: set[str] = set()  # canonical forms of accepted programs
@@ -251,35 +181,15 @@ def run_benchmark(
         programs.append(program)
         return f"accepted ({len(programs)}/{num_programs})"
 
-    for i, target in enumerate(egraph_targets, 1):
-        if len(programs) >= num_programs:
-            break
-        program = fpcore_from_body(target.text, variables)
-        print(
-            f"\n[egraph target {i}/{len(egraph_targets)} score={target.score:.1f}] ",
-            end="",
-            flush=True,
-        )
-        print(program, end="", flush=True)
-        result = try_accept(program)
-        print(f"  -> {result}")
-
     attempts = 0
     while len(programs) < num_programs and attempts < max_tries:
         attempts += 1
-        remaining_targets = [
-            target
-            for target in egraph_targets
-            if canonical(fpcore_from_body(target.text, variables)) not in seen
-        ]
-        target = target_for_attempt(remaining_targets, attempts, use_egraph_targets)
-        target_label = " target" if target is not None else ""
         print(
-            f"\n[attempt {attempts}/{max_tries}{target_label}] ",
+            f"\n[attempt {attempts}/{max_tries}] ",
             end="",
             flush=True,
         )
-        prompt = build_prompt(original, programs, target)
+        prompt = build_prompt(original, programs)
         run_info = get_runner().run(
             config,
             prompt,
@@ -336,8 +246,6 @@ def format_settings(
             f"# max_token_tries: {config.max_token_tries}",
             f"# num_programs: {args.num_programs}",
             f"# max_tries: {args.max_tries}",
-            f"# egraph_targets: {args.egraph_targets}",
-            f"# num_egraph_targets: {args.num_egraph_targets}",
         ]
     )
 
@@ -411,21 +319,6 @@ def main() -> None:
         help="Stream tokens as they are generated (default: on; use --no-stream to disable).",
     )
     parser.add_argument(
-        "--egraph-targets",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Extract bounded target programs from the saturated e-graph and use any "
-        "remaining targets as prompt hints (default: on; use --no-egraph-targets to "
-        "disable).",
-    )
-    parser.add_argument(
-        "--num-egraph-targets",
-        type=int,
-        default=6,
-        help="Number of nontrivial e-graph target bodies to extract per benchmark "
-        "(default: 6).",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("outputs"),
@@ -470,8 +363,6 @@ def main() -> None:
                 args.num_programs,
                 args.max_tries,
                 args.stream,
-                args.egraph_targets,
-                args.num_egraph_targets,
             )
         )
         # rewrite the file after each benchmark so partial results survive an interruption

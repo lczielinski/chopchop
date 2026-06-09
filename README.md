@@ -155,8 +155,6 @@ Tokens stream to the terminal as they are decoded. The model runs on the Apple S
 - `--max-tries N` — cap LLM generation attempts per benchmark (default: `25`)
 - `--max-token-tries N` — abort one LLM attempt after `N` rejected token proposals at the same prefix (default: `256`)
 - `--no-stream` — disable live token streaming
-- `--no-egraph-targets` — disable bounded target extraction from the saturated e-graph
-- `--num-egraph-targets N` — number of nontrivial e-graph target bodies to extract per benchmark (default: `6`)
 - `--output-dir DIR` — folder for per-run output files; each run writes a new timestamped `.txt` with the settings at the top (default: `outputs/`)
 
 For example, to generate 3 distinct programs equivalent to the quadratic formula, allowing up
@@ -165,15 +163,12 @@ to 20 attempts:
 uv run python -m egraph.run --benchmark quadratic.egglog -n 3 --max-tries 20
 ```
 
-Before LLM decoding, the runner now extracts a bounded, structurally diverse set of
-nontrivial equivalent bodies from the root e-class. Those targets can contribute programs
-directly (for example, the Citardauq form of the quadratic formula) and any remaining targets
-are rotated into prompts as rewrite-system-discovered shapes. This is generic over the
-saturated e-graph rather than benchmark-specific prompting. To encourage additional distinct
-programs, the prompt lists the programs already produced for the benchmark and asks for one
-with different floating-point behavior from a different structural rewrite family when
-possible. Accepted programs are deduplicated by a canonical form (whitespace normalized), so
-trivial formatting changes are not counted as distinct.
+The LLM generates each program on its own, constrained only by the egraph-backed
+realizability checker — it is never handed a target shape extracted from the e-graph. To
+encourage additional distinct programs, the prompt lists the programs already produced for
+the benchmark and asks for one with different floating-point behavior from a different
+structural rewrite family when possible. Accepted programs are deduplicated by a canonical
+form (whitespace normalized), so trivial formatting changes are not counted as distinct.
 
 ### Models and memory
 Models are loaded with `transformers` in bfloat16 onto MPS, so the whole model must fit in

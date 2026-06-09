@@ -11,78 +11,49 @@
 
 (rewrite (Add a b)
   (Add b a))
-
 (rewrite (Add (Num a) (Num b))
   (Num (+ a b)))
-
 (rewrite (Add (Add a b) c)
   (Add a (Add b c)))
-
 (rewrite (Neg a)
   (Sub (Num 0) a))
-
 (rewrite (Sub (Num 0) a)
   (Neg a))
-
 (rewrite (Sub a b)
   (Add a (Neg b)))
-
 (rewrite (Sub (Num a) (Num b))
   (Num (- a b)))
-
 (rewrite (Mul a b)
   (Mul b a))
-
 (rewrite (Mul (Num a) (Num b))
   (Num (* a b)))
-
 (rewrite (Mul (Mul a b) c)
   (Mul a (Mul b c)))
-
 (rewrite (Mul a (Add b c))
   (Add (Mul a b) (Mul a c)))
 
-;; The rule set is kept deliberately small: every rule enriches the e-graph, and decoding
-;; intersects the whole e-graph with the grammar on each token, so a Herbie-sized rule set
-;; makes the per-token check too slow.
-
-;; Squaring, guarded to a VARIABLE base. Expanding a squared sum, or the generic reverse
-;; (Mul a a) -> (Pow a 2), blows up saturation and lets the checker accept unbounded pow
-;; towers, so both are avoided.
-(rewrite (Pow (Var v) (Num 2)) (Mul (Var v) (Var v)))
-(rewrite (Mul (Var v) (Var v)) (Pow (Var v) (Num 2)))
+;; Squaring, guarded to a variable base
+(birewrite (Pow (Var v) (Num 2)) (Mul (Var v) (Var v)))
 
 (rewrite (Div a b)
   (Mul a (Div (Num 1) b)))
-
 (rewrite (Mul a (Div (Num 1) b))
   (Div a b))
-
-(rewrite (Div (Num 1) (Mul b c))
+(birewrite (Div (Num 1) (Mul b c))
   (Mul (Div (Num 1) b) (Div (Num 1) c)))
-
-(rewrite (Mul (Div (Num 1) b) (Div (Num 1) c))
-  (Div (Num 1) (Mul b c)))
-
 (rewrite (Div (Sub a b) c)
   (Sub (Div a c) (Div b c)))
-
 (rewrite (Mul a (Sub b c))
   (Sub (Mul a b) (Mul a c)))
-
 (rewrite (Div (Mul a b) (Mul c d))
   (Mul (Div a c) (Div b d)))
-
 (rewrite (Pow (Sub a b) (Num 2))
   (Pow (Sub b a) (Num 2)))
 
-;; Conjugate rationalization (enables the Citardauq / numerically-stable form):
-;; p + sqrt(d) = (p^2 - d) / (p - sqrt(d)). Guarded to (Add _ (Sqrt _)) so it only fires
-;; where a sqrt is being added (sound for d >= 0, p != sqrt(d)).
+;; Conjugate rationalization p + sqrt(d) = (p^2 - d) / (p - sqrt(d))
 (rewrite (Add p (Sqrt d))
   (Div (Sub (Pow p (Num 2)) d) (Sub p (Sqrt d))))
 
-;; Supporting identities that let the rationalized form reduce to 2c/(-b - sqrt d).
 (rewrite (Pow (Neg a) (Num 2))
   (Pow a (Num 2)))
 (rewrite (Sub a (Sub a b))

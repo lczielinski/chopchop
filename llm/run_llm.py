@@ -27,7 +27,7 @@ class Config:
     temperature: float = 0.5
     repetition_penalty: float = 1.0
     top_p: float = 1.0
-    top_k: float = 0
+    top_k: int = 0
     timeout: float = 99999.0  # no timeout by default
     # Reject the attempt if it runs this long without finishing.
     max_new_tokens: int = 100
@@ -118,7 +118,10 @@ class LanguageModelRunner:
         )
         inp = torch.tensor([input_ids + generated_tokens])
         inp = inp.to(self.device)
-        if self.tokenizer.eos_token_id in forbidden_tokens:
+        # Chat models may finish on any of several EOS ids (see _resolve_eos_ids);
+        # if any of them has been rejected at this prefix, disable EOS handling so
+        # bad_words_ids alone decides what the model may emit.
+        if forbidden_tokens & self.eos_ids:
             eos_token_id = None
         else:
             eos_token_id = self.tokenizer.eos_token_id
@@ -153,7 +156,11 @@ class LanguageModelRunner:
         generated_tokens: list[int] = self.tokenizer(
             fixed_prefix, add_special_tokens=False
         )["input_ids"]
-        forbidden_tokens: defaultdict[tuple[int, ...], set[int]] = defaultdict(set)
+        # Rejected proposals, keyed by prefix length: tokens only ever append (a
+        # rejection crops the cache and stays at the same length), so within one
+        # attempt each length identifies a unique prefix — no need to hash the
+        # whole token tuple on every proposal.
+        forbidden_tokens: defaultdict[int, set[int]] = defaultdict(set)
         cache = DynamicCache()
         decoded_output = fixed_prefix
         accepted_len = len(decoded_output)  # length of decoded text for accepted tokens
@@ -173,7 +180,7 @@ class LanguageModelRunner:
                 input_ids,
                 config,
                 generated_tokens,
-                forbidden_tokens[tuple(generated_tokens)],
+                forbidden_tokens[len(generated_tokens)],
                 cache,
             )
             new_token: int = output.sequences[0][-1].tolist()
@@ -214,7 +221,7 @@ class LanguageModelRunner:
                 if len(generated_tokens) >= config.max_new_tokens:
                     break
             else:
-                forbidden_tokens[tuple(generated_tokens)].add(new_token)
+                forbidden_tokens[len(generated_tokens)].add(new_token)
                 cache.crop(-1)
                 if tries >= config.max_token_tries:
                     break

@@ -15,6 +15,7 @@ from typing import TypedDict
 
 import torch
 
+from core.grammar import as_tree
 from core.rewrite import rewriter
 from llm.realizability import RealizabilityChecker
 from llm.run_llm import Config, LanguageModelRunner, ModelConfig
@@ -380,7 +381,13 @@ def main() -> None:
         # rewrite the file after each benchmark so partial results survive an interruption
         blocks = "\n".join(format_block(r) for r in results)
         output_path.write_text(f"{header}\n\n{blocks}", encoding="utf-8")
+        # Drop everything keyed to this benchmark's equation graph: as_tree caches
+        # results for Vars whose equations are about to vanish (a recurring Var in a
+        # later benchmark would get a stale answer), and in_egraph pins each
+        # benchmark's whole e-graph in memory.
         rewriter.clear()
+        as_tree.cache_clear()
+        in_egraph.cache_clear()
 
     print(f"\nWrote results to {output_path}")
 

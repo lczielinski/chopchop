@@ -22,7 +22,7 @@ class EmptySet(TreeGrammar):
 
 @dataclass(frozen=True)
 class ASTLeaf(TreeGrammar, Token):
-    is_tree: ClassVar[bool] = True  # type : ignore
+    is_tree: ClassVar[bool] = True  # type: ignore
 
 
 class Application(TreeGrammar, ABC):

@@ -34,9 +34,6 @@ class LexerSpec:
         lstate = lstate.remove_ignorable_tokens()
         return lstate.get_partial_lexes()
 
-    def partial_lex(self, inp: str) -> set[tuple[Token, ...]]:
-        return self.lex(inp, final=False)
-
     def compute_lexer_state(self, inp: str) -> LexerState:
         # Reuse the lex of the longest prefix in the cache.
         lstate = LexerState()
@@ -63,17 +60,6 @@ class LexerState:
 
     def get_partial_lexes(self) -> set[tuple[Token, ...]]:
         return {tuple(self.prefix) + cont for cont in self.continuations}
-
-    def simplify(self) -> LexerState:
-        """Move complete leading continuation tokens into the fixed prefix."""
-        prefix = self.prefix
-        continuations = self.continuations
-        while continuations and all(
-            cont and cont[0].nullable() for cont in continuations
-        ):
-            prefix = prefix + (next(iter(continuations))[0].complete(),)
-            continuations = {cont[1:] for cont in continuations}
-        return LexerState(prefix, continuations)
 
     def finalize(self) -> LexerState:
         """Complete every completable partial lex and discard the others."""

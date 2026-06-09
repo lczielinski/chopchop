@@ -33,7 +33,7 @@ class Var:  # should not subclass Term here since we want mypy to distinguish
     _hash: int = field(init=False, repr=False)
 
     def __post_init__(self):
-        hash_value = hash((self.f, self.args, tuple(self.kwargs.values())))
+        hash_value = hash((self.f, self.args, tuple(sorted(self.kwargs.items()))))
         object.__setattr__(self, "_hash", hash_value)
 
     def __str__(self):
@@ -56,7 +56,6 @@ class RewriteSystem:
     equations: dict[Var, Term]
     fix_cache: dict[tuple[Callable, Var], Any]
     dependencies: DiGraph
-    worklist: deque[Var]
 
     def __init__(self):
         self.dependencies = DiGraph()
@@ -101,6 +100,8 @@ def rewrite(f):
         visited = set()
         while worklist:
             var = worklist.popleft()
+            if var in visited:  # a var can be enqueued by several parents
+                continue
             term = rewriter.equations[var]
             while isinstance(term, Var):
                 term = rewriter.equations[term]
@@ -109,9 +110,15 @@ def rewrite(f):
             descendents = set(var_descendents(compacted))
             replace_adjacency_list(rewriter.dependencies, var, descendents)
             visited.add(var)
-            worklist.extend(set(descendents) - visited)
+            worklist.extend(descendents - visited)
 
     def start_rewrite(start_var: Var) -> Var:
+        # Already expanded and simplified by an earlier top-level call (start_rewrite
+        # fully drains its worklist, so a known var has all descendants known too).
+        # Skipping the redundant simplify pass keeps repeated derivations of the same
+        # prefix (one per sampled token) from re-walking the whole equation graph.
+        if start_var in rewriter.equations:
+            return start_var
         worklist: deque[Var] = deque([start_var])
         while worklist:
             current = worklist.popleft()
@@ -168,14 +175,17 @@ def _fixpoint(f: Callable[[Term], T], bot: Callable[..., T]) -> Callable[[Term],
 
     def kildall(start: Var) -> T:
         worklist: deque[Var] = deque()
+        queued: set[Var] = set()  # mirrors worklist for O(1) membership
         nodes: set[Var] = set()
         for var in nx.dfs_postorder_nodes(rewriter.dependencies, start):
             if (f, var) not in rewriter.fix_cache:
                 nodes.add(var)
                 worklist.append(var)
+                queued.add(var)
                 rewriter.fix_cache[(f, var)] = bot()
         while worklist:
             current = worklist.popleft()
+            queued.discard(current)
             current_term = rewriter.equations[current]
             while isinstance(current_term, Var):
                 current_term = rewriter.equations[current_term]
@@ -184,8 +194,9 @@ def _fixpoint(f: Callable[[Term], T], bot: Callable[..., T]) -> Callable[[Term],
             if new != rewriter.fix_cache[(f, current)]:
                 rewriter.fix_cache[(f, current)] = new
                 for pred in rewriter.dependencies.predecessors(current):
-                    if pred not in worklist and pred in nodes:
+                    if pred not in queued and pred in nodes:
                         worklist.append(pred)
+                        queued.add(pred)
         return rewriter.fix_cache[(f, start)]
 
     @wraps(f)

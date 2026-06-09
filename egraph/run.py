@@ -79,12 +79,15 @@ def load_benchmark(name: str) -> tuple[str, str]:
 
 
 def canonical(program: str) -> str:
-    """Canonical form for distinctness checks: just collapse whitespace.
+    """Canonical form for distinctness checks: normalize s-expression spacing.
 
-    Programs are plain arithmetic s-expressions (no `let` bindings), so two outputs are
-    "the same" only if they differ purely in formatting.
+    Programs are plain arithmetic s-expressions (no `let` bindings), and the lexer ignores
+    whitespace, so token-identical outputs like `(* 66743 ...)` and `( * 66743 ...)` are
+    "the same". Isolating the parens before collapsing whitespace makes spacing around the
+    delimiters irrelevant, so two outputs differ here only if their token streams differ.
     """
-    return re.sub(r"\s+", " ", program).strip()
+    spaced = re.sub(r"([()])", r" \1 ", program)
+    return re.sub(r"\s+", " ", spaced).strip()
 
 
 # Guards against degenerate cyclic-rule towers during decoding (see RealizabilityChecker).

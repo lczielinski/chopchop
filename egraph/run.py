@@ -89,6 +89,26 @@ def canonical(program: str) -> str:
     return re.sub(r"\s+", " ", spaced).strip()
 
 
+def normalize_program(program: str) -> str:
+    """Render an FPCore s-expression with one canonical whitespace style."""
+    tokens = re.findall(r"\(|\)|[^\s()]+", program)
+    pieces: list[str] = []
+    previous: str | None = None
+    for token in tokens:
+        if token == "(":
+            if previous not in (None, "("):
+                pieces.append(" ")
+            pieces.append(token)
+        elif token == ")":
+            pieces.append(token)
+        else:
+            if previous not in (None, "("):
+                pieces.append(" ")
+            pieces.append(token)
+        previous = token
+    return "".join(pieces)
+
+
 # Decoding guards: cap nesting depth and per-check time, skipping the timeout for
 # shallow prefixes (legitimately slow but realizable).
 MAX_DEPTH = 18
@@ -225,16 +245,17 @@ def run_benchmark(
     seen_families: set[tuple[str, ...]] = set()  # operator multisets of accepted programs
 
     def try_accept(program: str) -> str:
-        key = canonical(program)
+        normalized = normalize_program(program)
+        key = canonical(normalized)
         if key in seen:
             return "duplicate"
         if family(key) in seen_families:
             return "same rewrite family as an accepted program"
-        if not checker.realizable(program, True):
+        if not checker.realizable(normalized, True):
             return "not equivalent"
         seen.add(key)
         seen_families.add(family(key))
-        programs.append(program)
+        programs.append(normalized)
         return f"accepted ({len(programs)}/{num_programs})"
 
     attempts = 0
@@ -335,7 +356,7 @@ def format_block(result: BenchmarkResult) -> str:
         lines.append("(no equivalent program found)")
     for i, program in enumerate(result["programs"], 1):
         lines.append(f"{i}.")
-        lines.append(program)
+        lines.append(normalize_program(program))
         lines.append("")
     return "\n".join(lines)
 

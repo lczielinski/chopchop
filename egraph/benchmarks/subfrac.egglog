@@ -1,0 +1,9 @@
+;; 1/(x+1) - 1/x
+;; would like to produce -1/((x+1)x)
+
+(let x (Var "x"))
+
+(let start
+  (Sub 
+    (Div (Num 1) (Add x (Num 1)))
+    (Div (Num 1) x)))

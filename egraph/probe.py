@@ -76,12 +76,12 @@ CANDIDATES = {
             "(FPCore (x1 x2 y1 y2) (sqrt (+ (* (- x1 x2) (- x1 x2)) (* (- y1 y2) (- y1 y2)))))",
             True,
         ),
-        # Fully expanded squared difference: (x1-x2)^2 = x1^2 - 2*x1*x2 + x2^2.
-        # Supported by the targeted var-var expansion rule in let.egglog.
+        # Fully expanded squared difference: needs an expansion rule whose general
+        # form blows up the e-graph ~3.5x, so it is omitted.
         (
             "expand-sq",
             "(FPCore (x1 x2 y1 y2) (sqrt (+ (+ (- (* x1 x1) (* (* 2 x1) x2)) (* x2 x2)) (* (- y1 y2) (- y1 y2)))))",
-            True,
+            False,
         ),
     ],
     "lerp": [
@@ -97,12 +97,11 @@ CANDIDATES = {
             "(FPCore (start end scale) (+ start (- (* end scale) (* start scale))))",
             True,
         ),
-        # Supported by the targeted lerp-factoring rule in let.egglog (general
-        # identity-introduction and factoring rules remain intentionally omitted).
+        # Needs factoring / identity-introduction rules, which are omitted.
         (
             "factor-1mscale",
             "(FPCore (start end scale) (+ (* start (- 1 scale)) (* end scale)))",
-            True,
+            False,
         ),
     ],
     "power": [
@@ -135,6 +134,32 @@ CANDIDATES = {
             "split-r2-denom",
             "(FPCore (m1 m2 r) (* (* (* (/ 1 r) 66743) (/ 1 1000000000000000)) (/ (* m1 m2) r)))",
             True,
+        ),
+    ],
+    "subfrac": [
+        (
+            "reference",
+            "(FPCore (x) (- (/ 1 (+ x 1)) (/ 1 x)))",
+            True,
+        ),
+        # Combined over the common denominator: -1/((x+1)x). Needs the
+        # unit-fraction-difference and sum-cancellation rules.
+        (
+            "neg-num",
+            "(FPCore (x) (/ (- 1) (* (+ x 1) x)))",
+            True,
+        ),
+        # Same, with the negation outside the fraction.
+        (
+            "neg-recip",
+            "(FPCore (x) (- (/ 1 (* (+ x 1) x))))",
+            True,
+        ),
+        # NOT equivalent: sign flipped (this is 1/x - 1/(x+1)).
+        (
+            "wrong-sign",
+            "(FPCore (x) (/ 1 (* (+ x 1) x)))",
+            False,
         ),
     ],
     "variance": [

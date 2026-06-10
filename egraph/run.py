@@ -80,21 +80,17 @@ def load_benchmark(name: str) -> tuple[str, str]:
 
 
 def canonical(program: str) -> str:
-    """Canonical form for distinctness checks: normalize s-expression spacing.
+    """Whitespace-normalized form: two programs differ iff their token streams do.
 
-    Programs are plain arithmetic s-expressions (no `let` bindings), and the lexer ignores
-    whitespace, so token-identical outputs like `(* 66743 ...)` and `( * 66743 ...)` are
-    "the same". Isolating the parens before collapsing whitespace makes spacing around the
-    delimiters irrelevant, so two outputs differ here only if their token streams differ.
+    Parens and `+ - * /` are isolated before collapsing whitespace; these characters
+    cannot occur inside a symbol or number, so this is token-faithful.
     """
-    spaced = re.sub(r"([()])", r" \1 ", program)
+    spaced = re.sub(r"([()+\-*/])", r" \1 ", program)
     return re.sub(r"\s+", " ", spaced).strip()
 
 
-# Guards against degenerate cyclic-rule towers during decoding (see RealizabilityChecker).
-# The deepest benchmark nests ~9 levels, so 18 leaves headroom for real rewrites; legitimate
-# checks are sub-second, so a 5s cap only catches runaway ones; the timeout is skipped for
-# shallow prefixes, which are legitimately slow but realizable.
+# Decoding guards: cap nesting depth and per-check time, skipping the timeout for
+# shallow prefixes (legitimately slow but realizable).
 MAX_DEPTH = 18
 CHECK_TIMEOUT = 5.0
 TIMEOUT_MIN_DEPTH = 5
@@ -113,6 +109,58 @@ def build_checker(source: str) -> RealizabilityChecker:
         timeout=CHECK_TIMEOUT,
         timeout_min_depth=TIMEOUT_MIN_DEPTH,
     )
+
+
+OPERATOR_TOKENS = frozenset({"+", "-", "*", "/", "sqrt"})
+
+
+def family(canonical_text: str) -> tuple[str, ...]:
+    """Rewrite-family signature: root operator plus operator multiset.
+
+    Commutative reorders and sign shuffles keep the signature; genuinely different
+    rewrites (reciprocal, split fraction, conjugate, ...) change it.
+    """
+    operators = [t for t in canonical_text.split() if t in OPERATOR_TOKENS]
+    root = operators[0] if operators else ""
+    return (root, *sorted(operators))
+
+# Forced-divergence forks cycled across attempts: None samples freely; k forces the
+# attempt to branch off every accepted program before that program's k-th operator.
+FORK_CYCLE: tuple[int | None, ...] = (None, 1, 2, 3)
+
+
+def operator_count(canonical_text: str) -> int:
+    """Number of complete operator tokens in a canonical(-ized) program prefix."""
+    return sum(token in OPERATOR_TOKENS for token in canonical_text.split())
+
+
+class ForkingChecker:
+    """Force structural exploration across attempts.
+
+    Rejects tokens that keep the candidate tracing an already-accepted program
+    through its `fork`-th operator, so the attempt must branch onto a different —
+    still realizable — structure earlier. Cycling `fork` across attempts explores
+    forks at every depth (fork=1 forces a new root operator, etc.).
+    """
+
+    def __init__(
+        self,
+        checker: RealizabilityChecker,
+        accepted: set[str],  # canonical forms of accepted programs
+        fork: int | None,
+    ):
+        self.checker = checker
+        self.accepted = accepted
+        self.fork = fork
+
+    def realizable(self, prefix: str, final: bool = False) -> bool:
+        if self.fork is not None:
+            c = canonical(prefix)
+            if operator_count(c) >= self.fork and any(
+                a.startswith(c) for a in self.accepted
+            ):
+                return False
+        return self.checker.realizable(prefix, final)
 
 
 def build_prompt(
@@ -174,22 +222,30 @@ def run_benchmark(
 
     programs: list[str] = []
     seen: set[str] = set()  # canonical forms of accepted programs
+    seen_families: set[tuple[str, ...]] = set()  # operator multisets of accepted programs
 
     def try_accept(program: str) -> str:
         key = canonical(program)
         if key in seen:
             return "duplicate"
+        if family(key) in seen_families:
+            return "same rewrite family as an accepted program"
         if not checker.realizable(program, True):
             return "not equivalent"
         seen.add(key)
+        seen_families.add(family(key))
         programs.append(program)
         return f"accepted ({len(programs)}/{num_programs})"
 
     attempts = 0
     while len(programs) < num_programs and attempts < max_tries:
         attempts += 1
+        # Cycle the forced-divergence fork (see ForkingChecker). Forcing only
+        # applies once there is an accepted program to diverge from.
+        fork = FORK_CYCLE[(attempts - 1) % len(FORK_CYCLE)] if programs else None
+        fork_note = f", diverge@op{fork}" if fork is not None else ""
         print(
-            f"\n[attempt {attempts}/{max_tries}] ",
+            f"\n[attempt {attempts}/{max_tries}{fork_note}] ",
             end="",
             flush=True,
         )
@@ -198,11 +254,29 @@ def run_benchmark(
             config,
             prompt,
             context,
-            realizability_checker=checker,
+            realizability_checker=ForkingChecker(checker, seen, fork),
             stream=stream,
         )
         if not stream:
             print(run_info.output, end="", flush=True)
+
+        contested = sorted(
+            (s for s in run_info.hard_spots if s[2] >= 3),
+            key=lambda s: -s[2],
+        )
+        if contested:
+            print(
+                f"\n  forks ({run_info.num_tokens_generated} tokens from "
+                f"{run_info.num_tokens_guessed} proposals, "
+                f"{run_info.total_realizability_time:.1f}s checking):"
+            )
+            for prefix_tail, accepted_segment, rejections in contested[:5]:
+                outcome = (
+                    f"accepted {accepted_segment!r}"
+                    if accepted_segment
+                    else "ABORTED (no realizable token)"
+                )
+                print(f"    {rejections:3d} rejected at ...{prefix_tail!r} -> {outcome}")
 
         if not run_info.llm_finished:
             reason = (
@@ -244,7 +318,7 @@ def format_settings(
             f"# device: {model_config.device}",
             f"# dtype: {model_config.dtype}",
             f"# temperature: {config.temperature}",
-            f"# top_p: {config.top_p}",
+            f"# min_p: {config.min_p}",
             f"# repetition_penalty: {config.repetition_penalty}",
             f"# max_new_tokens: {config.max_new_tokens}",
             f"# max_token_tries: {config.max_token_tries}",
@@ -290,10 +364,11 @@ def main() -> None:
         "helps the model land on a recognized rewrite.",
     )
     parser.add_argument(
-        "--top-p",
+        "--min-p",
         type=float,
-        default=0.9,
-        help="Nucleus sampling cutoff (default: 0.9). Use 1.0 to disable tail filtering.",
+        default=0.0,
+        help="Min-p sampling cutoff (default: 0 = off): keep tokens with prob >= min_p * "
+        "top token's prob. For exploration, try --temperature 1.3 --min-p 0.05.",
     )
     parser.add_argument(
         "--num-programs",
@@ -353,7 +428,7 @@ def main() -> None:
 
     config = Config(
         temperature=args.temperature,
-        top_p=args.top_p,
+        min_p=args.min_p,
         repetition_penalty=1.2,
         max_token_tries=args.max_token_tries,
         max_new_tokens=args.max_new_tokens,

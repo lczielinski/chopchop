@@ -2,7 +2,7 @@ import gc
 import sys
 import time
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -26,13 +26,26 @@ class Config:
 
     temperature: float = 0.5
     repetition_penalty: float = 1.0
-    top_p: float = 1.0
     top_k: int = 0
+    # Keep tokens with prob >= min_p * (top token's prob); 0 disables.
+    min_p: float = 0.0
     timeout: float = 99999.0  # no timeout by default
     # Reject the attempt if it runs this long without finishing.
     max_new_tokens: int = 100
     # Reject the attempt if the model keeps proposing invalid tokens at one prefix.
     max_token_tries: int = 256
+
+
+def is_stall(segment: str, prior_text: str, is_final: bool) -> bool:
+    """A token that adds nothing the lexer can see: an empty decode, or whitespace
+    following whitespace. Rejecting these loses no programs; a single space after a
+    non-space character still gets through (it can terminate or separate symbols).
+    """
+    if is_final:
+        return False
+    if segment == "":
+        return True
+    return segment.isspace() and (not prior_text or prior_text[-1].isspace())
 
 
 @dataclass
@@ -43,6 +56,8 @@ class RunInfo:
     num_tokens_guessed: int
     num_tokens_generated: int
     tries_per_token: Counter[int]
+    # Contested positions: (prefix tail, accepted segment or "" if aborted, rejections).
+    hard_spots: list[tuple[str, str, int]] = field(default_factory=list)
     timed_out: bool = False
 
 
@@ -118,9 +133,8 @@ class LanguageModelRunner:
         )
         inp = torch.tensor([input_ids + generated_tokens])
         inp = inp.to(self.device)
-        # Chat models may finish on any of several EOS ids (see _resolve_eos_ids);
-        # if any of them has been rejected at this prefix, disable EOS handling so
-        # bad_words_ids alone decides what the model may emit.
+        # If any EOS id has been rejected at this prefix, let bad_words_ids alone
+        # decide what the model may emit.
         if forbidden_tokens & self.eos_ids:
             eos_token_id = None
         else:
@@ -133,8 +147,8 @@ class LanguageModelRunner:
             eos_token_id=eos_token_id,
             max_new_tokens=1,
             temperature=config.temperature,
-            top_p=config.top_p,
             top_k=config.top_k,
+            min_p=config.min_p if config.min_p > 0 else None,
             bad_words_ids=bad_words,
             repetition_penalty=config.repetition_penalty,
             num_return_sequences=1,
@@ -156,10 +170,8 @@ class LanguageModelRunner:
         generated_tokens: list[int] = self.tokenizer(
             fixed_prefix, add_special_tokens=False
         )["input_ids"]
-        # Rejected proposals, keyed by prefix length: tokens only ever append (a
-        # rejection crops the cache and stays at the same length), so within one
-        # attempt each length identifies a unique prefix — no need to hash the
-        # whole token tuple on every proposal.
+        # Rejected proposals keyed by prefix length (tokens only append, so within
+        # one attempt each length identifies a unique prefix).
         forbidden_tokens: defaultdict[int, set[int]] = defaultdict(set)
         cache = DynamicCache()
         decoded_output = fixed_prefix
@@ -171,6 +183,7 @@ class LanguageModelRunner:
         total_realizability_time = 0.0
         tries = 0
         try_counts: Counter[int] = Counter()
+        hard_spots: list[tuple[str, str, int]] = []
         start_time = time.time()
 
         while time.time() - start_time <= config.timeout:
@@ -191,6 +204,10 @@ class LanguageModelRunner:
 
             if realizability_checker is None:
                 is_realizable = True
+            elif is_stall(
+                decoded_output[accepted_len:], decoded_output[:accepted_len], is_final
+            ):
+                is_realizable = False  # reject without paying for a check
             else:
                 check_start = time.time()
                 is_realizable = realizability_checker.realizable(
@@ -200,6 +217,14 @@ class LanguageModelRunner:
 
             if is_realizable:
                 try_counts[tries] += 1
+                if tries > 1:
+                    hard_spots.append(
+                        (
+                            decoded_output[:accepted_len][-32:],
+                            decoded_output[accepted_len:],
+                            tries - 1,
+                        )
+                    )
                 tries = 0
                 generated_tokens.append(new_token)
                 if stream:
@@ -214,6 +239,7 @@ class LanguageModelRunner:
                         num_tokens_guessed=num_tokens_guessed,
                         num_tokens_generated=len(generated_tokens),
                         tries_per_token=try_counts,
+                        hard_spots=hard_spots,
                         timed_out=False,
                     )
                 # A stuck model can stay "realizable" via whitespace or recursive
@@ -224,6 +250,9 @@ class LanguageModelRunner:
                 forbidden_tokens[len(generated_tokens)].add(new_token)
                 cache.crop(-1)
                 if tries >= config.max_token_tries:
+                    hard_spots.append(
+                        (decoded_output[:accepted_len][-32:], "", tries)
+                    )
                     break
         return RunInfo(
             llm_finished=False,
@@ -232,6 +261,7 @@ class LanguageModelRunner:
             num_tokens_guessed=num_tokens_guessed,
             num_tokens_generated=len(generated_tokens),
             tries_per_token=try_counts,
+            hard_spots=hard_spots,
             timed_out=time.time() - start_time > config.timeout,
         )
 

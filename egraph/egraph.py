@@ -5,17 +5,14 @@ from dataclasses import dataclass
 from functools import lru_cache, partial
 from typing import Callable
 
+import networkx as nx
 from egglog.bindings import EGraph
 
 from core.grammar import Application, TreeGrammar, EmptySet, Union, ASTLeaf
 from core.rewrite import rewrite
 
-# egglog routes Rust logs through Python's logging (pyo3-log). It warns about `let` globals
-# that are not prefixed with `$`; our benchmarks intentionally use plain names, so quiet
-# warning-level messages from egglog while leaving errors visible.
 logging.getLogger("egglog").setLevel(logging.ERROR)
-
-START_RELATION = "__start__"  # dummy relation for the start symbol
+START_RELATION = "__start__"
 
 
 @dataclass(frozen=True)
@@ -56,6 +53,96 @@ def root_and_eclass_mapping(egraph: EGraph) -> tuple[str, EClassMapping]:
     return root_eclass, dict(eclasses)
 
 
+def strip_identity_enodes(eclasses: EClassMapping) -> EClassMapping:
+    """Remove identity-padding enodes: (* 1 x), (+ x 0), (- x 0), (- 0 x), (/ x 1),
+    and equal-operand (- x x) / (/ x x)
+    """
+    const_cache: dict[tuple[str, str], bool] = {}
+
+    def is_const(eclass: str, literal: str) -> bool:
+        key = (eclass, literal)
+        if key not in const_cache:
+            const_cache[key] = any(
+                enode.op == "Num"
+                and any(
+                    leaf.op == literal and not leaf.children
+                    for leaf in eclasses.get(enode.children[0], ())
+                )
+                for enode in eclasses.get(eclass, ())
+                if enode.children
+            )
+        return const_cache[key]
+
+    def is_identity(enode: ENode) -> bool:
+        if len(enode.children) != 2:
+            return False
+        a, b = enode.children
+        match enode.op:
+            case "Mul":
+                # 1 is an identity, 0 an absorber
+                return (
+                    is_const(a, "1")
+                    or is_const(b, "1")
+                    or is_const(a, "0")
+                    or is_const(b, "0")
+                )
+            case "Add":
+                return is_const(a, "0") or is_const(b, "0")
+            case "Sub":
+                return a == b or is_const(a, "0") or is_const(b, "0")
+            case "Div":
+                return a == b or is_const(b, "1") or is_const(a, "0")
+        return False
+
+    stripped = {
+        eclass: {enode for enode in enodes if not is_identity(enode)}
+        for eclass, enodes in eclasses.items()
+    }
+
+    # Second pass: break spelling cycles (x as (/ (* a x) a), (- (- x)), ...),
+    # which otherwise let a stuck model nest equivalent wrappers forever. No cycle
+    # consists entirely of minimal-depth enodes (depths strictly decrease along
+    # them), so dropping non-minimal enodes with a child in their own SCC leaves
+    # the index acyclic while keeping every acyclic spelling.
+    min_depth: dict[str, float] = {eclass: float("inf") for eclass in stripped}
+
+    def enode_depth(enode: ENode) -> float:
+        return 1 + max(
+            (min_depth.get(child, float("inf")) for child in enode.children),
+            default=0,
+        )
+
+    changed = True
+    while changed:
+        changed = False
+        for eclass, enodes in stripped.items():
+            best = min((enode_depth(e) for e in enodes), default=float("inf"))
+            if best < min_depth[eclass]:
+                min_depth[eclass] = best
+                changed = True
+
+    graph = nx.DiGraph()
+    graph.add_nodes_from(stripped)
+    for eclass, enodes in stripped.items():
+        graph.add_edges_from(
+            (eclass, child) for enode in enodes for child in enode.children
+        )
+    scc_of: dict[str, int] = {}
+    for i, component in enumerate(nx.strongly_connected_components(graph)):
+        for node in component:
+            scc_of[node] = i
+
+    return {
+        eclass: {
+            enode
+            for enode in enodes
+            if enode_depth(enode) <= min_depth[eclass]  # minimal witnesses stay
+            or all(scc_of.get(child) != scc_of[eclass] for child in enode.children)
+        }
+        for eclass, enodes in stripped.items()
+    }
+
+
 @lru_cache(maxsize=None)
 def in_egraph(egraph: EGraph) -> Callable[[TreeGrammar], TreeGrammar]:
     """
@@ -63,6 +150,7 @@ def in_egraph(egraph: EGraph) -> Callable[[TreeGrammar], TreeGrammar]:
     of the grammar with the egraph.
     """
     root_eclass, eclasses = root_and_eclass_mapping(egraph)
+    eclasses = strip_identity_enodes(eclasses)
 
     @rewrite
     def in_eclass(eclass: str, t: TreeGrammar) -> TreeGrammar:

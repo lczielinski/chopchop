@@ -52,22 +52,14 @@
 (rewrite (Add p (Sqrt d))
   (Div (Sub (Mul p p) d) (Sub p (Sqrt d))))
 
-;; Targeted one-step expansions. Deriving these from the generic distribution
-;; rules needs more saturation runs than the cap allows, so they are stated
-;; directly (like the conjugate rule above) to keep the e-graph small.
-;; Squared difference: (a-b)^2 = a^2 - 2ab + b^2. Restricted to differences of
-;; plain variables: on compound operands (e.g. variance's (x - mean)^2, where
-;; mean is itself a quotient of sums) the expanded products cascade through the
-;; distribution rules and blow the e-graph up ~6x.
-(rewrite (Mul (Sub (Var x) (Var y)) (Sub (Var x) (Var y)))
-  (Add (Sub (Mul (Var x) (Var x)) (Mul (Num 2) (Mul (Var x) (Var y)))) (Mul (Var y) (Var y))))
-;; Lerp factoring: a + (b-a)*c = a*(1-c) + b*c
-(rewrite (Add a (Mul (Sub b a) c))
-  (Add (Mul a (Sub (Num 1) c)) (Mul b c)))
+;; 1/a - 1/b = (b-a)/(ab); the general p/a - q/b form cross-multiplies everywhere
+(rewrite (Sub (Div (Num 1) a) (Div (Num 1) b))
+  (Div (Sub b a) (Mul a b)))
+;; a - (a+b) = -b
+(rewrite (Sub a (Add a b))
+  (Neg b))
 
-;; Identity eliminations. These only merge eclasses (the LHS must already be in
-;; the e-graph), so they cost nothing and connect derivations that pass through
-;; a folded constant, e.g. (Div x (Div 2 2)) ~ x.
+;; Identity eliminations (merge-only, no growth)
 (rewrite (Mul (Num 1) x)
   x)
 (rewrite (Div x (Num 1))

@@ -152,7 +152,11 @@ Tokens stream to the terminal as they are decoded. The model runs on the Apple S
 - `--model NAME` (default: `qwen14b`) — one of `qwen14b`, `qwen7b`, `codestral`,
   `deepseek-v2`, `llama13b`, `llama7b`, `deepseek`
 - `--temperature FLOAT` (default: `0.8`)
-- `--top-p FLOAT` — nucleus sampling cutoff (default: `0.9`; `1.0` disables tail filtering)
+- `--min-p FLOAT` — min-p sampling cutoff (default: `0` = off). Keeps tokens with probability
+  at least `min_p` times the top token's; adapts per position, so it permits tail exploration
+  at genuine forks while pruning garbage. For exploration runs prefer
+  `--temperature 1.3 --min-p 0.05`: the realizability checker rejects bad tokens
+  anyway, so high temperature is much safer here than in unconstrained generation
 - `--num-programs N` / `-n N` — generate `N` distinct equivalent programs (default: `1`)
 - `--max-tries N` — cap LLM generation attempts per benchmark (default: `25`)
 - `--max-token-tries N` — abort one LLM attempt after `N` rejected token proposals at the same prefix (default: `256`)
@@ -170,7 +174,19 @@ realizability checker — it is never handed a target shape extracted from the e
 encourage additional distinct programs, the prompt lists the programs already produced for
 the benchmark and asks for one with different floating-point behavior from a different
 structural rewrite family when possible. Accepted programs are deduplicated by a canonical
-form (whitespace normalized), so trivial formatting changes are not counted as distinct.
+form (whitespace normalized), and more coarsely by a rewrite-family signature (root
+operator plus operator multiset), so formatting changes, commutative reorders, and sign
+shuffles are not counted as distinct.
+
+The e-graph index used for the intersection is pruned before decoding
+(`strip_identity_enodes`): identity padding like `(* 1 ..)` and `(+ 0 ..)` is removed,
+and spelling cycles are broken so the index is acyclic — a stuck model cannot nest
+equivalent wrappers forever, while every acyclic rewrite survives.
+
+Because constrained decoding filters tokens but never up-weights rare branches, later
+attempts cycle a forced-divergence fork (`diverge@opK` in the attempt header): the attempt
+may not follow an already-accepted program through its K-th operator token, so it must
+branch onto a different — still provably equivalent — structure at an earlier fork.
 
 ### Models and memory
 Models are loaded with `transformers` in bfloat16 onto MPS, so the whole model must fit in

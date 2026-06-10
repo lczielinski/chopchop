@@ -50,6 +50,22 @@ Distributing the product gives the algebraically identical
 
 but these round differently. The original subtracts first, so it rounds once. The distributed form computes two separate products `a*b` and `a*c`, each rounded, and then subtracts them — so when `b` and `c` are close, `a*b` and `a*c` are nearly equal and their difference loses most of its significant digits to catastrophic cancellation.
 
+A second worked example, of conjugate rationalization — the most valuable rewrite because it changes the program's rounding behavior the most. In
+
+```
+(FPCore (x y)
+  (/ (+ (- y) (sqrt x)) 3))
+```
+
+the numerator `(+ (- y) (sqrt x))` suffers catastrophic cancellation when `y` is close to `(sqrt x)`. Multiplying the numerator and denominator by the conjugate `(- (- y) (sqrt x))` turns the numerator into `(- (* y y) x)` — a difference of the *squared* quantities, which does not cancel — and moves the conjugate into the denominator:
+
+```
+(FPCore (x y)
+  (/ (- (* y y) x) (* 3 (- (- y) (sqrt x)))))
+```
+
+When the new numerator simplifies further — for instance when `x` is itself a difference whose first term is `(* y y)`, so that `(- (* y y) x)` collapses by cancellation — write the simplified numerator, and cancel any factor it shares with the denominator.
+
 Keep the structure otherwise intact: in particular, keep a sum written as a sum in the same operand orientation (write `(+ (- b) s)`, not `(- s b)`), and do not factor a sum of products back into a product. Do NOT merely reorder the operands of a commutative operator (e.g. `a + b` to `b + a`), which produces the exact same floating-point result.
 
 A program is *equivalent* if it can be rewritten from the original using the following rules encoding basic properties of arithmetic:

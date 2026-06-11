@@ -37,15 +37,22 @@ class Config:
 
 
 def is_stall(segment: str, prior_text: str, is_final: bool) -> bool:
-    """A token that adds nothing the lexer can see: an empty decode, or whitespace
-    following whitespace. Rejecting these loses no programs; a single space after a
-    non-space character still gets through (it can terminate or separate symbols).
+    """A token that adds nothing the lexer can see: an empty decode, or padding
+    whitespace. Whitespace is only ever needed to separate two adjacent word
+    characters (e.g. `1 1` or `x 1`, which would otherwise merge into one token);
+    next to parens or operators it is pure padding. So the only whitespace that
+    survives is a single space immediately after a word character — rejecting the
+    rest loses no programs.
     """
     if is_final:
         return False
     if segment == "":
         return True
-    return segment.isspace() and (not prior_text or prior_text[-1].isspace())
+    if not segment.isspace():
+        return False
+    return segment != " " or not prior_text or not (
+        prior_text[-1].isalnum() or prior_text[-1] == "_"
+    )
 
 
 @dataclass

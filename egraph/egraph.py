@@ -57,21 +57,56 @@ def strip_identity_enodes(eclasses: EClassMapping) -> EClassMapping:
     """Remove identity-padding enodes: (* 1 x), (+ x 0), (- x 0), (- 0 x), (/ x 1),
     and equal-operand (- x x) / (/ x x)
     """
-    const_cache: dict[tuple[str, str], bool] = {}
-
-    def is_const(eclass: str, literal: str) -> bool:
-        key = (eclass, literal)
-        if key not in const_cache:
-            const_cache[key] = any(
-                enode.op == "Num"
-                and any(
-                    leaf.op == literal and not leaf.children
-                    for leaf in eclasses.get(enode.children[0], ())
-                )
-                for enode in eclasses.get(eclass, ())
-                if enode.children
+    def has_num(eclass: str, literal: str) -> bool:
+        return any(
+            enode.op == "Num"
+            and any(
+                leaf.op == literal and not leaf.children
+                for leaf in eclasses.get(enode.children[0], ())
             )
-        return const_cache[key]
+            for enode in eclasses.get(eclass, ())
+            if enode.children
+        )
+
+    # Classes provably equal to 0 or 1, as a closure: the saturation cap can leave
+    # frontier spellings like (- 0) or (* 0 x) unmerged with the literal's class.
+    zeroish: set[str] = {ec for ec in eclasses if has_num(ec, "0")}
+    oneish: set[str] = {ec for ec in eclasses if has_num(ec, "1")}
+
+    def denotes_zero(enode: ENode) -> bool:
+        match enode.op, enode.children:
+            case ("Neg" | "Sqrt", (a,)):
+                return a in zeroish
+            case ("Mul", (a, b)):
+                return a in zeroish or b in zeroish
+            case ("Add", (a, b)):
+                return a in zeroish and b in zeroish
+            case ("Sub", (a, b)):
+                return a == b or (a in zeroish and b in zeroish)
+            case ("Div", (a, _)):
+                return a in zeroish
+        return False
+
+    def denotes_one(enode: ENode) -> bool:
+        match enode.op, enode.children:
+            case ("Sqrt", (a,)):
+                return a in oneish
+            case ("Mul", (a, b)):
+                return a in oneish and b in oneish
+            case ("Div", (a, b)):
+                return a == b or (a in oneish and b in oneish)
+        return False
+
+    changed = True
+    while changed:
+        changed = False
+        for eclass, enodes in eclasses.items():
+            if eclass not in zeroish and any(denotes_zero(e) for e in enodes):
+                zeroish.add(eclass)
+                changed = True
+            if eclass not in oneish and any(denotes_one(e) for e in enodes):
+                oneish.add(eclass)
+                changed = True
 
     def is_identity(enode: ENode) -> bool:
         if len(enode.children) != 2:
@@ -80,18 +115,13 @@ def strip_identity_enodes(eclasses: EClassMapping) -> EClassMapping:
         match enode.op:
             case "Mul":
                 # 1 is an identity, 0 an absorber
-                return (
-                    is_const(a, "1")
-                    or is_const(b, "1")
-                    or is_const(a, "0")
-                    or is_const(b, "0")
-                )
+                return a in oneish or b in oneish or a in zeroish or b in zeroish
             case "Add":
-                return is_const(a, "0") or is_const(b, "0")
+                return a in zeroish or b in zeroish
             case "Sub":
-                return a == b or is_const(a, "0") or is_const(b, "0")
+                return a == b or a in zeroish or b in zeroish
             case "Div":
-                return a == b or is_const(b, "1") or is_const(a, "0")
+                return a == b or b in oneish or a in zeroish
         return False
 
     stripped = {

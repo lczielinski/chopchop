@@ -58,6 +58,12 @@
 ;; a - (a+b) = -b
 (rewrite (Sub a (Add a b))
   (Neg b))
+;; -a + -b = -(a+b)
+(rewrite (Add (Neg a) (Neg b))
+  (Neg (Add a b)))
+;; (-a)/(-b) = a/b
+(rewrite (Div (Neg a) (Neg b))
+  (Div a b))
 
 ;; Identity eliminations (merge-only, no growth)
 (rewrite (Mul (Num 1) x)

@@ -136,6 +136,25 @@ CANDIDATES = {
             True,
         ),
     ],
+    "sqrtminus": [
+        (
+            "reference",
+            "(FPCore (x) (- (sqrt (+ (* x x) 1)) x))",
+            True,
+        ),
+        # Conjugate reciprocal: 1 / (sqrt(x*x+1) + x).
+        (
+            "conj-recip",
+            "(FPCore (x) (/ 1 (+ (sqrt (+ (* x x) 1)) x)))",
+            True,
+        ),
+        # NOT equivalent: sign flipped.
+        (
+            "wrong-sign",
+            "(FPCore (x) (- x (sqrt (+ (* x x) 1))))",
+            False,
+        ),
+    ],
     "subfrac": [
         (
             "reference",
